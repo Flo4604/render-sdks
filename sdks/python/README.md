@@ -5,7 +5,7 @@ Await `client.render()` to get finished image URLs. The SDK handles cached resul
 Install the public wheel:
 
 ```bash
-python -m pip install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot_render-0.1.1-py3-none-any.whl
+python -m pip install medalbot-render
 export RENDER_API_KEY="your-api-key"
 ```
 
@@ -74,7 +74,7 @@ except RenderError as error:
 Run these commands from the repository root:
 
 ```bash
-uv run --project packages/sdk-python --extra dev pytest packages/sdk-python/tests
-uv run --project packages/sdk-python --extra dev mypy --strict packages/sdk-python/src
-uv build --project packages/sdk-python
+uv run --project sdks/python --extra dev pytest sdks/python/tests
+uv run --project sdks/python --extra dev mypy --strict sdks/python/src
+uv build --project sdks/python
 ```

@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing SDK release tag, for example v0.1.1
+        description: Existing SDK release tag, for example typescript/v0.1.2
         required: true
         type: string
       npm:
@@ -19,7 +19,7 @@ permissions:
   contents: read
 jobs:
   npm:
-    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')) || inputs.npm
+    if: (github.event_name == 'release' && (startsWith(github.event.release.tag_name, 'v') || startsWith(github.event.release.tag_name, 'typescript/v'))) || inputs.npm
     runs-on: ubuntu-latest
     environment: npm
     permissions:
@@ -37,7 +37,7 @@ jobs:
           RELEASE: ${{ github.event.release.tag_name || inputs.version }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE" =~ ^(typescript/)?v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh release download "$RELEASE" --repo "$REPOSITORY" --pattern '*.tgz' --pattern SHA256SUMS
           sha256sum --ignore-missing --check SHA256SUMS
       - run: npm publish ./*.tgz --access public

@@ -3,7 +3,7 @@
 Await `client.render()` to get image URLs. Cache hits and new renders return the same image map. The SDK submits the request, waits for completion and handles transient transport retries.
 
 ```bash
-npm install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot-render-0.1.1.tgz
+npm install @medalbot/render
 ```
 
 ```ts
@@ -17,7 +17,7 @@ console.log(images.front);
 console.log(images.back);
 ```
 
-The default API URL is `https://render.medalbot.cc`. Supply `baseUrl` for local development. The release tarball is a public npm package and includes its public protocol types. It does not depend on private workspace packages.
+The default API URL is `https://render.medalbot.cc`. Supply `baseUrl` for local development. The package includes its public protocol types and has no private workspace dependencies.
 
 ## Waiting and retries
 

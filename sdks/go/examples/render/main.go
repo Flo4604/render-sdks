@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	render "github.com/Flo4604/render-sdks/go"
+	render "github.com/Flo4604/render-sdks/sdks/go"
 )
 
 func main() {

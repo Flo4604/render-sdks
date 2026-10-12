@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/go@v0.1.1
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.2
 ```
 
 ```go
@@ -13,7 +13,7 @@ import (
     "fmt"
     "os"
 
-    render "github.com/Flo4604/render-sdks/go"
+    render "github.com/Flo4604/render-sdks/sdks/go"
 )
 
 client, err := render.NewClient(render.Config{

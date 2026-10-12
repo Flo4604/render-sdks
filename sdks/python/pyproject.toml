@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "medalbot-render"
+version = "0.1.2"
+description = "Async Python client for the Medalbot Render API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.28,<1", "pydantic>=2.10,<3"]
+
+[project.urls]
+Homepage = "https://github.com/Flo4604/render-sdks"
+Repository = "https://github.com/Flo4604/render-sdks"
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "mypy>=1.15,<2", "ruff>=0.11,<1"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medalbot_render"]

@@ -1,35 +1,22 @@
 # Medalbot Render SDKs
 
-Public clients for the render API at https://render.medalbot.cc. The render service and native renderer are private. This repository contains only client code, documentation, and release artifacts.
+Official clients for `https://render.medalbot.cc`. Await a render call to receive public image URLs, whether the request hits the cache or needs GPU work. The SDKs handle polling and retries.
 
-Each client's render method waits for complete image URLs, whether the images are cached or require a new render. Requests use your API key.
+All SDK source, tests, and package builds live here. The render service and native renderer remain private.
 
-## TypeScript
+| Language | Source and guide | Install |
+| --- | --- | --- |
+| TypeScript | [sdks/typescript](sdks/typescript) | `npm install @medalbot/render` |
+| Python | [sdks/python](sdks/python) | `pip install medalbot-render` |
+| Go | [sdks/go](sdks/go) | `go get github.com/Flo4604/render-sdks/sdks/go@v0.1.2` |
+| C# | [sdks/csharp](sdks/csharp) | `dotnet add package Medalbot.Render` |
 
-```sh
-npm install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot-render-0.1.1.tgz
+```ts
+import { RenderClient } from '@medalbot/render';
+
+const client = new RenderClient({ apiKey: process.env.RENDER_API_KEY! });
+const images = await client.render({ inspectUrl });
+console.log(images.front);
 ```
 
-Import `RenderClient` from `@medalbot/render`. See the [TypeScript guide](docs/typescript.md).
-
-## Python
-
-```sh
-python -m pip install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot_render-0.1.1-py3-none-any.whl
-```
-
-Import `RenderClient` from `medalbot_render`. See the [Python guide](docs/python.md).
-
-## Go
-
-```sh
-go get github.com/Flo4604/render-sdks/go@v0.1.1
-```
-
-Import `github.com/Flo4604/render-sdks/go`. See the [Go guide](go/README.md).
-
-## C#
-
-Await `RenderClient.RenderAsync()` from `Medalbot.Render` to get image URLs. The [C# guide](csharp/README.md) includes NuGet and public package installation instructions. The [C# release](https://github.com/Flo4604/render-sdks/releases/tag/csharp/v0.1.0) contains a dependency-free .NET 8 package.
-
-All packages are available without access to the private service repository. The release includes SHA-256 checksums. npm and PyPI registry names are not required for these installation commands.
+Each SDK has its own version and release tag. See [RELEASING.md](RELEASING.md) for tests, package builds, and trusted publishing.

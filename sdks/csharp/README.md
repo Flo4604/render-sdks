@@ -6,8 +6,6 @@
 dotnet add package Medalbot.Render --version 0.1.0
 ```
 
-Until NuGet publishing is configured, download `Medalbot.Render.0.1.0.nupkg` from the [public release](https://github.com/Flo4604/render-sdks/releases/tag/csharp/v0.1.0) into a local `packages` directory. Install it with `dotnet add package Medalbot.Render --version 0.1.0 --source ./packages`.
-
 ```csharp
 using Medalbot.Render;
 
