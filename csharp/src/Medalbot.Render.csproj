@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>Medalbot.Render</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Medalbot</Authors>
+    <Description>Await CS2 skin renders with typed views, automatic polling, retries, and public image URLs.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Flo4604/render-sdks</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Flo4604/render-sdks</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cs2;render;medalbot;sdk</PackageTags>
+    <DebugType>embedded</DebugType>
+    <Deterministic>true</Deterministic>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <PathMap>$(MSBuildThisFileDirectory)=/_/Medalbot.Render/</PathMap>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

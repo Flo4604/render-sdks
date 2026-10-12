@@ -28,4 +28,8 @@ go get github.com/Flo4604/render-sdks/go@v0.1.1
 
 Import `github.com/Flo4604/render-sdks/go`. See the [Go guide](go/README.md).
 
+## C#
+
+Await `RenderClient.RenderAsync()` from `Medalbot.Render` to get image URLs. The [C# guide](csharp/README.md) includes NuGet and public package installation instructions. The [C# release](https://github.com/Flo4604/render-sdks/releases/tag/csharp/v0.1.0) contains a dependency-free .NET 8 package.
+
 All packages are available without access to the private service repository. The release includes SHA-256 checksums. npm and PyPI registry names are not required for these installation commands.

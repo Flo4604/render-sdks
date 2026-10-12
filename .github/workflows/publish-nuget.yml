@@ -1,0 +1,47 @@
+name: Publish C# SDK to NuGet
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing C# release tag, for example csharp/v0.1.0
+        required: true
+        type: string
+concurrency:
+  group: sdk-nuget-${{ github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  nuget:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'csharp/v')
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - name: Download and verify public package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ github.event.release.tag_name || inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        run: |
+          [[ "$RELEASE" =~ ^csharp/v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release download "$RELEASE" --repo "$REPOSITORY" --pattern 'Medalbot.Render.*.nupkg' --pattern SHA256SUMS
+          sha256sum --ignore-missing --check SHA256SUMS
+          test -n "$NUGET_USER" || { echo 'Set the NUGET_USER repository variable to your NuGet profile username after creating the trusted publisher policy.'; exit 1; }
+      - name: Obtain a short-lived NuGet credential
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish audited package
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push ./*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
