@@ -1,0 +1,61 @@
+name: Publish SDKs to package registries
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing SDK release tag, for example v0.1.0
+        required: true
+        type: string
+      npm:
+        description: Publish to npm after configuring trusted publishing
+        type: boolean
+        default: false
+      pypi:
+        description: Publish to PyPI after configuring trusted publishing
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  npm:
+    if: inputs.npm
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Download and verify public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release download "$RELEASE" --repo "$REPOSITORY" --pattern '*.tgz' --pattern SHA256SUMS
+          sha256sum --ignore-missing --check SHA256SUMS
+      - run: npm publish ./*.tgz --access public
+  pypi:
+    if: inputs.pypi
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download and verify public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir dist
+          cd dist
+          gh release download "$RELEASE" --repo "$REPOSITORY" --pattern '*.whl' --pattern SHA256SUMS
+          sha256sum --ignore-missing --check SHA256SUMS
+          rm SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@release/v1
