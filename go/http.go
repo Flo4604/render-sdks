@@ -1,4 +1,4 @@
-package skinicon
+package render
 
 import (
 	"bytes"

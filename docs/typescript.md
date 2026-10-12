@@ -3,13 +3,13 @@
 Await `client.render()` to get image URLs. Cache hits and new renders return the same image map. The SDK submits the request, waits for completion and handles transient transport retries.
 
 ```bash
-npm install https://github.com/Flo4604/skinicon-sdks/releases/download/v0.1.0/medalbot-skinicon-0.1.0.tgz
+npm install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot-render-0.1.1.tgz
 ```
 
 ```ts
-import { Skinicon } from '@medalbot/skinicon';
+import { RenderClient } from '@medalbot/render';
 
-const client = new Skinicon({ apiKey });
+const client = new RenderClient({ apiKey });
 const images = await client.render({ inspectUrl });
 
 console.log(images.preview);

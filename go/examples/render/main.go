@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	skinicon "github.com/Flo4604/skinicon-sdks/go"
+	render "github.com/Flo4604/render-sdks/go"
 )
 
 func main() {
@@ -15,13 +15,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./examples/render 'steam://...'")
 		os.Exit(1)
 	}
-	client, err := skinicon.NewClient(skinicon.Config{APIKey: os.Getenv("RENDER_API_KEY")})
+	client, err := render.NewClient(render.Config{APIKey: os.Getenv("RENDER_API_KEY")})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	start := time.Now()
-	images, err := client.Render(context.Background(), skinicon.RenderRequest{InspectURL: os.Args[1]})
+	images, err := client.Render(context.Background(), render.RenderRequest{InspectURL: os.Args[1]})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

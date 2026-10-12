@@ -5,18 +5,18 @@ Await `client.render()` to get finished image URLs. The SDK handles cached resul
 Install the public wheel:
 
 ```bash
-python -m pip install https://github.com/Flo4604/skinicon-sdks/releases/download/v0.1.0/skinicon-0.1.0-py3-none-any.whl
+python -m pip install https://github.com/Flo4604/render-sdks/releases/download/v0.1.1/medalbot_render-0.1.1-py3-none-any.whl
 export RENDER_API_KEY="your-api-key"
 ```
 
 ```python
 import asyncio
 import os
-from skinicon import Skinicon
+from medalbot_render import RenderClient
 
 
 async def main():
-    async with Skinicon(api_key=os.environ["RENDER_API_KEY"]) as client:
+    async with RenderClient(api_key=os.environ["RENDER_API_KEY"]) as client:
         images = await client.render(inspect_url="steam://...")
         print(images["preview"])
         print(images["front"])
@@ -50,7 +50,7 @@ The initial request sends `Prefer: wait=10`. If the render is still pending, the
 Cancel the asyncio task to stop a local wait. Cancellation raises `asyncio.CancelledError`; shared GPU work continues. A local deadline raises `RenderError` with code `wait_timeout`. Other errors include `code`, `detail`, `render_id`, `request_id`, `idempotency_key`, and `status_code` where available.
 
 ```python
-from skinicon import RenderError
+from medalbot_render import RenderError
 
 try:
     images = await client.render(inspect_url=inspect_url, timeout=30)

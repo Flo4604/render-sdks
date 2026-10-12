@@ -1,3 +1,3 @@
-module github.com/Flo4604/skinicon-sdks/go
+module github.com/Flo4604/render-sdks/go
 
 go 1.22

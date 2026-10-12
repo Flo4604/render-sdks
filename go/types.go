@@ -1,5 +1,5 @@
-// Package skinicon renders CS2 items and waits for their public image URLs.
-package skinicon
+// Package render renders CS2 items and waits for their public image URLs.
+package render
 
 import (
 	"fmt"
@@ -72,5 +72,5 @@ type Error struct {
 	cause          error
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("skinicon: %s: %s", e.Code, e.Detail) }
+func (e *Error) Error() string { return fmt.Sprintf("render: %s: %s", e.Code, e.Detail) }
 func (e *Error) Unwrap() error { return e.cause }
