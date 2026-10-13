@@ -37,6 +37,8 @@ type RenderRequest struct {
 	InspectURL string `json:"inspectUrl"`
 	Views      []View `json:"views,omitempty"`
 	Format     Format `json:"format,omitempty"`
+	// StatTrak overrides the displayed counter. Nil preserves the item's counter.
+	StatTrak *int `json:"statTrak,omitempty"`
 }
 
 // Images maps each requested view to its public image URL.

@@ -19,6 +19,42 @@ const queued = {
 };
 const config = { baseUrl: "https://render.medalbot.cc", apiKey: "fixture" };
 
+test("StatTrak serializes explicit zero and omits an unspecified counter", async () => {
+  for (const statTrak of [undefined, 0, 1337, 999999]) {
+    const client = new RenderClient({
+      ...config,
+      fetch: async (_url, init) => {
+        assert.equal(typeof init?.body, "string");
+        if (typeof init?.body !== "string")
+          throw new Error("Expected JSON request");
+        const body = JSON.parse(init.body);
+        assert.equal(Object.hasOwn(body, "statTrak"), statTrak !== undefined);
+        assert.equal(body.statTrak, statTrak);
+        return Response.json(envelope(completed));
+      },
+    });
+    assert.deepEqual(
+      await client.render({ inspectUrl: "fixture", statTrak }),
+      images,
+    );
+  }
+});
+
+test("invalid StatTrak counts fail before HTTP submission", async () => {
+  let calls = 0;
+  const client = new RenderClient({
+    ...config,
+    fetch: async () => {
+      calls++;
+      return Response.json(envelope(completed));
+    },
+  });
+  for (const statTrak of [-1, 1.5, 1000000, NaN, Infinity]) {
+    await assert.rejects(client.render({ inspectUrl: "fixture", statTrak }));
+  }
+  assert.equal(calls, 0);
+});
+
 test("gateway and API error envelopes preserve request IDs", async () => {
   for (const error of [
     {

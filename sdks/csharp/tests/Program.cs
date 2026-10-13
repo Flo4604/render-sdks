@@ -48,6 +48,33 @@ tests.Add(("cached result returns images with the public wire format", async () 
 }
 ));
 
+tests.Add(("StatTrak serializes explicit zero and omits an unspecified counter", async () =>
+{
+    foreach (int? count in new int?[] { null, 0, 1337, 999999 })
+    {
+        using var handler = new MockHandler(async (message, _) =>
+        {
+            using var body = JsonDocument.Parse(await message.Content!.ReadAsStringAsync());
+            Equal(count.HasValue, body.RootElement.TryGetProperty("statTrak", out var value));
+            if (count.HasValue) Equal(count.Value, value.GetInt32());
+            return Response(Complete());
+        });
+        using var client = Client(handler);
+        Equal(front, (await client.RenderAsync(request with { StatTrak = count })).Front);
+    }
+}
+));
+
+tests.Add(("invalid StatTrak counts fail before HTTP submission", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(Complete())));
+    using var client = Client(handler);
+    foreach (var count in new[] { -1, 1000000 })
+        await Throws<ArgumentOutOfRangeException>(() => client.RenderAsync(request with { StatTrak = count }));
+    Equal(0, handler.Calls);
+}
+));
+
 tests.Add(("queued work polls until complete", async () =>
 {
     var calls = 0;

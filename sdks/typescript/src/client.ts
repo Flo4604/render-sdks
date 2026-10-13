@@ -4,6 +4,7 @@ import {
   RenderBatchEnvelope,
   type RenderData,
   RenderId,
+  RenderRequest,
   type RenderInput,
   ImageUrls as Images,
 } from "./protocol.js";
@@ -67,7 +68,12 @@ export class RenderClient {
         RenderBatchEnvelope.parse(
           await this.request("/v1/renders/batch", {
             method: "POST",
-            body: JSON.stringify({ requests }),
+            body: JSON.stringify({
+              requests: requests.map(({ request, idempotencyKey }) => ({
+                request: RenderRequest.parse(request),
+                idempotencyKey,
+              })),
+            }),
             ...(options.signal ? { signal: options.signal } : {}),
           }),
         ).data.renders.map((render) => {
@@ -96,7 +102,7 @@ export class RenderClient {
     return RenderEnvelope.parse(
       await this.request("/v1/renders", {
         method: "POST",
-        body: JSON.stringify(input),
+        body: JSON.stringify(RenderRequest.parse(input)),
         headers: {
           "Idempotency-Key": options.idempotencyKey ?? crypto.randomUUID(),
           ...(wait ? { Prefer: "wait=10" } : {}),
@@ -263,9 +269,4 @@ export class RenderClient {
   }
 }
 
-export type {
-  RenderInput,
-  RenderData,
-  ImageUrls,
-  View,
-} from "./protocol.js";
+export type { RenderInput, RenderData, ImageUrls, View } from "./protocol.js";

@@ -189,6 +189,9 @@ func validateInput(input RenderRequest) error {
 	if input.Format != "" && input.Format != PNG && input.Format != WebP {
 		return invalidInput("Format must be png or webp")
 	}
+	if input.StatTrak != nil && (*input.StatTrak < 0 || *input.StatTrak > 999999) {
+		return invalidInput("StatTrak must be an integer from 0 to 999999")
+	}
 	seen := make(map[View]bool)
 	for _, view := range input.Views {
 		if !validView(view) || seen[view] {

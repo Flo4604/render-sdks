@@ -9,6 +9,7 @@ public sealed record RenderRequest
     public required string InspectUrl { get; init; }
     public IReadOnlyList<RenderView>? Views { get; init; }
     public ImageFormat? Format { get; init; }
+    public int? StatTrak { get; init; }
 }
 
 public sealed record RenderImages(string? Preview, string? Front, string? Back)

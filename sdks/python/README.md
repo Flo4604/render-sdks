@@ -35,6 +35,7 @@ images = await client.render(
     inspect_url=inspect_url,
     views=["front"],
     format="webp",
+    stat_trak=1337,
     timeout=120,
     idempotency_key="listing-123-front-v1",
 )
@@ -42,6 +43,8 @@ print(images["front"])
 ```
 
 All three views are requested by default. WebP is lossless; PNG is also available. The result is a dictionary of URL strings, such as `{"front": "https://img.medalbot.cc/..."}`. Only requested views are present. Cache hits and fresh renders return the same shape.
+
+Set `stat_trak` to an integer from 0 to 999999 to override the displayed counter. Omit it or pass `None` to preserve the inspected item's counter. Zero explicitly renders zero. The option also works with `client.renders.create()` and changes only the render, not the Steam item.
 
 The initial request sends `Prefer: wait=10`. If the render is still pending, the SDK polls at intervals from 500 milliseconds to two seconds. The default 120-second deadline covers submission, retry delays, and polling together. Transport failures and HTTP 429, 502, 503, and 504 receive at most four attempts. Retries keep the same idempotency key. Retry delays honor `Retry-After` up to ten seconds.
 

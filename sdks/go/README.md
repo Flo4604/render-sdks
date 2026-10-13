@@ -70,3 +70,13 @@ go test -race ./...
 ```
 
 The example prints image URLs as JSON and elapsed time to stderr. It never prints the API key. Public releases use immutable Go module tags. The render service repository remains private.
+
+To override the displayed StatTrak counter, pass a pointer to an integer from 0 to 999999. A nil pointer preserves the inspected item's counter; a pointer to zero explicitly renders zero. This changes only the render, not the Steam item.
+
+```go
+counter := 1337
+images, err := client.Render(ctx, render.RenderRequest{
+    InspectURL: inspectURL,
+    StatTrak:   &counter,
+})
+```

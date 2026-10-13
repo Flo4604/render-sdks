@@ -3,7 +3,7 @@
 `RenderAsync` returns finished image URLs, whether the images are cached or need a new render. It handles submission, retries, and polling. The package targets .NET 8 or later and has no package dependencies.
 
 ```sh
-dotnet add package Medalbot.Render --version 0.1.0
+dotnet add package Medalbot.Render --version 0.1.1
 ```
 
 ```csharp
@@ -20,6 +20,8 @@ Console.WriteLine(images.Back);
 ```
 
 Omit `Views` to request preview, front, and back. Images use lossless WebP by default. Set `Format = ImageFormat.Png` for PNG. Unrequested image properties are null. Reuse one client for concurrent requests, then dispose it when the application shuts down.
+
+For a StatTrak weapon, use `new RenderRequest { InspectUrl = inspectUrl, StatTrak = 1337 }` to override the kill counter in the image. The integer range is 0 to 999999; zero is an explicit override. Leave `StatTrak` null to preserve the inspected counter. This only changes the render, never the Steam item. A weapon without StatTrak returns `stat_trak_unavailable`.
 
 ## Cancellation and timeouts
 

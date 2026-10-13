@@ -121,6 +121,7 @@ if (language === "typescript") {
     "lib/net8.0/Medalbot.Render.dll",
     "README.md",
     "[Content_Types].xml",
+    "package/services/metadata/core-properties/nuget.psmdcp",
   ]);
   if (
     members.some(

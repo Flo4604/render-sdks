@@ -57,19 +57,29 @@ def _submission(
     views: Sequence[View] | None,
     format: Format,
     idempotency_key: str | None,
+    stat_trak: int | None,
 ) -> tuple[dict[str, object], _Context, tuple[View, ...]]:
     if not isinstance(inspect_url, str) or not 1 <= len(inspect_url) <= 32768:
         raise ValueError("inspect_url must contain 1 to 32768 characters")
     requested = _views(views)
     if format not in ("webp", "png"):
         raise ValueError("format must be webp or png")
+    if stat_trak is not None and (
+        type(stat_trak) is not int or not 0 <= stat_trak <= 999999
+    ):
+        raise ValueError("stat_trak must be an integer from 0 to 999999")
     key = str(uuid4()) if idempotency_key is None else idempotency_key
     if not re.fullmatch(r"[\x21-\x7e]{1,128}", key):
         raise ValueError(
             "idempotency_key must contain 1 to 128 visible ASCII characters"
         )
+    body: dict[str, object] = {
+        "inspectUrl": inspect_url, "views": list(requested), "format": format
+    }
+    if stat_trak is not None:
+        body["statTrak"] = stat_trak
     return (
-        {"inspectUrl": inspect_url, "views": list(requested), "format": format},
+        body,
         _Context(idempotency_key=key),
         requested,
     )
@@ -266,12 +276,13 @@ class RenderClient:
         inspect_url: str,
         views: Sequence[View] | None = None,
         format: Format = "webp",
+        stat_trak: int | None = None,
         timeout: float = 120,
         idempotency_key: str | None = None,
     ) -> Images:
         """Return finished images, including cached results, within one total deadline."""
         body, context, requested = _submission(
-            inspect_url, views, format, idempotency_key
+            inspect_url, views, format, idempotency_key, stat_trak
         )
 
         async def run() -> Images:
@@ -295,10 +306,13 @@ class Renders:
         inspect_url: str,
         views: Sequence[View] | None = None,
         format: Format = "webp",
+        stat_trak: int | None = None,
         timeout: float = 120,
         idempotency_key: str | None = None,
     ) -> Render:
-        body, context, _ = _submission(inspect_url, views, format, idempotency_key)
+        body, context, _ = _submission(
+            inspect_url, views, format, idempotency_key, stat_trak
+        )
         return await self._client._bounded(
             lambda: self._client._request("POST", "/v1/renders", context, body=body),
             timeout,

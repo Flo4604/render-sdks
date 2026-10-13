@@ -17,6 +17,7 @@ export const RenderRequest = z.strictObject({
     .refine((v) => new Set(v).size === v.length, "Views must be unique")
     .default(["preview", "front", "back"]),
   format: Format.default("webp"),
+  statTrak: z.int().min(0).max(999999).optional(),
 });
 export type RenderRequest = z.output<typeof RenderRequest>;
 export type RenderInput = z.input<typeof RenderRequest>;

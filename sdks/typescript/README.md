@@ -19,6 +19,8 @@ console.log(images.back);
 
 The default API URL is `https://render.medalbot.cc`. Supply `baseUrl` for local development. The package includes its public protocol types and has no private workspace dependencies.
 
+For a StatTrak weapon, `await client.render({ inspectUrl, statTrak: 1337 })` overrides the kill counter in the image. The integer range is 0 to 999999; zero is an explicit override. Omit `statTrak` to preserve the inspected counter. This only changes the render, never the Steam item. A weapon without StatTrak returns `stat_trak_unavailable`.
+
 ## Waiting and retries
 
 The initial HTTP request asks the server to wait up to ten seconds. A ready result returns immediately. For longer jobs, the SDK polls automatically, starting at 500 milliseconds and backing off to two seconds. The caller's promise resolves only when the requested images are ready.
