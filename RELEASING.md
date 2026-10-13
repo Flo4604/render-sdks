@@ -28,7 +28,7 @@ npm publishes through `.github/workflows/publish-registries.yml` in environment 
 Python source and package builds live here. Its existing PyPI policy still trusts the private service repository's `publish-registries.yml` workflow. That workflow only downloads and publishes the public wheel; it contains no SDK source. Until the policy is moved, a maintainer dispatches it after creating the Python release:
 
 ```sh
-gh workflow run publish-registries.yml --repo Flo4604/skin-img -f version=python/v0.1.2
+gh workflow run publish-registries.yml --repo Flo4604/skin-img -f version=python/v0.1.3
 ```
 
 To retry npm or NuGet after a policy change, dispatch the matching public workflow with the existing release tag. Select the npm input when dispatching the npm workflow. NuGet also needs the `NUGET_USER` repository variable set to the profile username of the policy creator.

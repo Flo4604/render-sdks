@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/sdks/go@v0.1.2
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.3
 ```
 
 ```go
