@@ -1,5 +1,16 @@
 # Changes
 
+## Public image variants
+
+| SDK | Version |
+| --- | --- |
+| TypeScript | 0.1.4 |
+| Python | 0.1.4 |
+| Go | 0.1.4 |
+| C# | 0.1.2 |
+
+All SDKs include a pure URL helper for the fixed `small`, `card` and `zoom` image variants. The helpers preserve custom image origins, validate canonical original image URLs and leave the lossless original unchanged. The render response remains a map of view names to original URLs.
+
 ## StatTrak overrides
 
 | SDK | Version |

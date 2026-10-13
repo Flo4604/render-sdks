@@ -3,7 +3,7 @@
 `RenderAsync` returns finished image URLs, whether the images are cached or need a new render. It handles submission, retries, and polling. The package targets .NET 8 or later and has no package dependencies.
 
 ```sh
-dotnet add package Medalbot.Render --version 0.1.1
+dotnet add package Medalbot.Render --version 0.1.2
 ```
 
 ```csharp
@@ -48,3 +48,14 @@ Resume with `await client.WaitAsync(error.RenderId)` when the render ID is avail
 Pass `RenderClientOptions` to change `BaseUrl` or the default `Timeout`. The default URL is `https://render.medalbot.cc`. A custom `HttpMessageHandler` supports transport configuration and tests. The caller owns that handler and must disable automatic redirects. The default handler disables redirects.
 
 Run the protocol tests with `dotnet run --project tests/Medalbot.Render.Tests.csproj -c Release`. Build the package with `dotnet pack src/Medalbot.Render.csproj -c Release`.
+
+## Image delivery
+
+```csharp
+var card = Media.ImageUrl(images.Front!, ImageVariant.Card);
+var zoom = Media.ImageUrl(images.Front!, ImageVariant.Zoom);
+```
+
+The public recipes trim transparent padding, treating alpha values above 8 as visible. `small` fits within 500×220 at WebP quality 85, `card` fits within 1000×440 at quality 90, and `zoom` keeps the cropped native dimensions at quality 95. Resizing preserves the aspect ratio and never enlarges the image. The original lossless image stays unchanged.
+
+Helpers accept an absolute HTTP(S) original URL under `/v1/<canonical SHA-256>.webp` or `.png`. They reject credentials, queries, fragments, unknown variants and derivative URLs. They preserve the original origin for custom image domains and make no network request.

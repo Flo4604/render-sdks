@@ -8,7 +8,7 @@ All SDK source, tests, and package builds live here. The render service and nati
 | --- | --- | --- |
 | TypeScript | [sdks/typescript](sdks/typescript) | `npm install @medalbot/render` |
 | Python | [sdks/python](sdks/python) | `pip install medalbot-render` |
-| Go | [sdks/go](sdks/go) | `go get github.com/Flo4604/render-sdks/sdks/go@v0.1.3` |
+| Go | [sdks/go](sdks/go) | `go get github.com/Flo4604/render-sdks/sdks/go@v0.1.4` |
 | C# | [sdks/csharp](sdks/csharp) | `dotnet add package Medalbot.Render` |
 
 ```ts

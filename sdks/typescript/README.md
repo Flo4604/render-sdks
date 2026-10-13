@@ -45,3 +45,46 @@ The default timeout is two minutes for submission and polling together. Cancelli
 [Replicate's JavaScript client](https://github.com/replicate/replicate-javascript#replicaterun) exposes an awaited result and uses a bounded blocking request with a polling fallback. [fal's client](https://fal.ai/docs/documentation/model-apis/inference/client-setup) also exposes an awaited call that returns generated images. Our SDK uses the same caller-facing pattern over HTTP and JSON.
 
 The result is a set of complete image files. It has no token stream to consume. SSE could add optional progress events later; it is not required to await completion. gRPC is unnecessary for this public HTTP API.
+
+## Image delivery
+
+```ts
+import { imageUrl } from "@medalbot/render";
+
+const card = imageUrl(images.front, "card");
+const zoom = imageUrl(images.front, "zoom");
+```
+
+The public recipes trim transparent padding, treating alpha values above 8 as visible. `small` fits within 500×220 at WebP quality 85, `card` fits within 1000×440 at quality 90, and `zoom` keeps the cropped native dimensions at quality 95. Resizing preserves the aspect ratio and never enlarges the image. The original lossless image stays unchanged.
+
+Helpers accept an absolute HTTP(S) original URL under `/v1/<canonical SHA-256>.webp` or `.png`. They reject credentials, queries, fragments, unknown variants and derivative URLs. They preserve the original origin for custom image domains and make no network request.
+
+For a responsive card, choose a smaller image on narrow screens without downloading the original:
+
+```tsx
+<picture>
+  <source media="(max-width: 600px)" srcSet={imageUrl(images.front, "small")} />
+  <img src={imageUrl(images.front, "card")} alt="Weapon front view" loading="lazy" decoding="async" />
+</picture>
+```
+
+In a zoom dialog, show the card first, then replace it after the zoom image decodes. Start this on user intent so opening a gallery does not download every zoom image:
+
+```ts
+async function showZoom(element: HTMLImageElement, original: string) {
+  const card = imageUrl(original, "card");
+  element.src = card;
+  const larger = new Image();
+  larger.src = imageUrl(original, "zoom");
+  try {
+    await larger.decode();
+    if (element.isConnected && element.src === card) {
+      element.src = larger.src;
+    }
+  } catch {
+    // Keep the card if the larger image cannot load.
+  }
+}
+```
+
+Keep the original URL for an explicit lossless download. It is separate from the smaller display images.

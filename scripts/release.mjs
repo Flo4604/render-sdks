@@ -62,9 +62,14 @@ if (language === "typescript") {
     "package/package.json",
     "package/README.md",
     "package/LICENSE",
-    ...["client.js", "client.d.ts", "protocol.js", "protocol.d.ts"].map(
-      (name) => `package/dist/src/${name}`,
-    ),
+    ...[
+      "client.js",
+      "client.d.ts",
+      "protocol.js",
+      "protocol.d.ts",
+      "media.js",
+      "media.d.ts",
+    ].map((name) => `package/dist/src/${name}`),
   ]);
   if (members.some((name) => !allowed.has(name)))
     throw new Error("Unexpected npm package member");
@@ -82,7 +87,7 @@ if (language === "typescript") {
   if (
     members.some(
       (name) =>
-        !/^medalbot_render\/(__init__\.py|client\.py|models\.py|py\.typed)$/.test(
+        !/^medalbot_render\/(__init__\.py|client\.py|models\.py|media\.py|py\.typed)$/.test(
           name,
         ) &&
         !/^medalbot_render-[^/]+\.dist-info\/(METADATA|WHEEL|RECORD|licenses\/LICENSE)$/.test(

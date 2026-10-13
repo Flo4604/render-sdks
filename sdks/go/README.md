@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/sdks/go@v0.1.3
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.4
 ```
 
 ```go
@@ -80,3 +80,18 @@ images, err := client.Render(ctx, render.RenderRequest{
     StatTrak:   &counter,
 })
 ```
+
+## Image delivery
+
+```go
+card, err := render.ImageURL(images[render.Front], render.Card)
+if err != nil {
+    return err
+}
+```
+
+Use `render.Small`, `render.Card`, or `render.Zoom` as the variant.
+
+The public recipes trim transparent padding, treating alpha values above 8 as visible. `small` fits within 500×220 at WebP quality 85, `card` fits within 1000×440 at quality 90, and `zoom` keeps the cropped native dimensions at quality 95. Resizing preserves the aspect ratio and never enlarges the image. The original lossless image stays unchanged.
+
+Helpers accept an absolute HTTP(S) original URL under `/v1/<canonical SHA-256>.webp` or `.png`. They reject credentials, queries, fragments, unknown variants and derivative URLs. They preserve the original origin for custom image domains and make no network request.

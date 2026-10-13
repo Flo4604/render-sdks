@@ -24,6 +24,35 @@ async Task<T> Throws<T>(Func<Task> action) where T : Exception
     throw new Exception($"Expected {typeof(T).Name}");
 }
 
+tests.Add(("media URL helpers preserve origins and select fixed recipes", () =>
+{
+    var hash = new string('A', 43);
+    foreach (var origin in new[] { "https://img.medalbot.cc", "http://localhost:8080", "https://images.example:8443", "http://[::1]:8080" })
+        foreach (var format in new[] { "webp", "png" })
+            foreach (var variant in Enum.GetValues<ImageVariant>())
+                Equal($"{origin}/d/v1/{hash}_{variant.ToString().ToLowerInvariant()}.webp", Media.ImageUrl($"{origin}/v1/{hash}.{format}", variant));
+    return Task.CompletedTask;
+}));
+
+tests.Add(("media URL helpers reject arbitrary URLs and noncanonical hashes", async () =>
+{
+    var hash = new string('A', 43);
+    var original = $"https://img.medalbot.cc/v1/{hash}.webp";
+    foreach (var value in new[] {
+        $"/v1/{hash}.webp", original + "?", original + "?w=20", original + "#", original + "#x",
+        original.Replace("https:", "file:"), original.Replace("img.medalbot.cc", "user:pass@img.medalbot.cc"),
+        original.Replace("img.medalbot.cc", "@img.medalbot.cc"), original.Replace("img.medalbot.cc", "img.medalbot.cc:65536"),
+        original.Replace("/v1/", "/x/../v1/"), original.Replace("/v1/", "/v1%2F"),
+        original.Replace(hash, hash[..42] + "B"), original.Replace(hash, hash + "="),
+        original.Replace(".webp", ".jpg"), original.Replace(".webp", ".webp.webp"),
+        original + "\n", " " + original, original.Replace("img.medalbot.cc", "img.\0medalbot.cc"),
+        original.Replace("img.medalbot.cc", "img.\u00a0medalbot.cc"), original.Replace("/v1/", "\\v1/"),
+        Media.ImageUrl(original, ImageVariant.Card),
+    })
+        await Throws<ArgumentException>(() => { Media.ImageUrl(value, ImageVariant.Card); return Task.CompletedTask; });
+    await Throws<ArgumentOutOfRangeException>(() => { Media.ImageUrl(original, (ImageVariant)99); return Task.CompletedTask; });
+}));
+
 tests.Add(("cached result returns images with the public wire format", async () =>
 {
     using var handler = new MockHandler(async (message, _) =>

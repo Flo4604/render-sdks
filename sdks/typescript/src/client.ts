@@ -270,3 +270,4 @@ export class RenderClient {
 }
 
 export type { RenderInput, RenderData, ImageUrls, View } from "./protocol.js";
+export { imageUrl, type ImageVariant } from "./media.js";

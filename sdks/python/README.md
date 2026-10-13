@@ -81,3 +81,16 @@ uv run --project sdks/python --extra dev pytest sdks/python/tests
 uv run --project sdks/python --extra dev mypy --strict sdks/python/src
 uv build --project sdks/python
 ```
+
+## Image delivery
+
+```python
+from medalbot_render import image_url
+
+card = image_url(images["front"], "card")
+zoom = image_url(images["front"], "zoom")
+```
+
+The public recipes trim transparent padding, treating alpha values above 8 as visible. `small` fits within 500×220 at WebP quality 85, `card` fits within 1000×440 at quality 90, and `zoom` keeps the cropped native dimensions at quality 95. Resizing preserves the aspect ratio and never enlarges the image. The original lossless image stays unchanged.
+
+Helpers accept an absolute HTTP(S) original URL under `/v1/<canonical SHA-256>.webp` or `.png`. They reject credentials, queries, fragments, unknown variants and derivative URLs. They preserve the original origin for custom image domains and make no network request.
