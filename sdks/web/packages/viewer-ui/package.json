@@ -1,0 +1,57 @@
+{
+  "name": "@medalbot/viewer-ui",
+  "version": "0.1.0",
+  "description": "Styled React components and the <medalbot-viewer> custom element over the headless @medalbot/viewer-engine.",
+  "type": "module",
+  "sideEffects": [
+    "*.css",
+    "./dist/src/element.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./element": {
+      "types": "./dist/src/element.d.ts",
+      "import": "./dist/src/element.js"
+    },
+    "./styles.css": "./src/styles.css",
+    "./standalone": "./dist/standalone/medalbot-viewer.js"
+  },
+  "scripts": {
+    "build": "rm -rf dist && node scripts/styles-module.ts && tsc && vite build && cp src/styles.css dist/standalone/medalbot-viewer.css",
+    "test": "node --test dist/tests/*.test.js"
+  },
+  "dependencies": {
+    "@medalbot/viewer-engine": "^0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@webgpu/types": "0.1.73",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "vite": "^7.3.1"
+  },
+  "files": [
+    "dist/src",
+    "dist/standalone",
+    "src/styles.css",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Flo4604/render-sdks.git",
+    "directory": "sdks/web/packages/viewer-ui"
+  },
+  "homepage": "https://github.com/Flo4604/render-sdks/tree/main/sdks/web",
+  "publishConfig": {
+    "access": "public"
+  }
+}

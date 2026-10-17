@@ -1,0 +1,42 @@
+{
+  "name": "@medalbot/viewer-engine",
+  "version": "0.1.0",
+  "description": "Headless WebGPU viewer engine for Medalbot item renders: runs the executor's compiled item plan in the browser.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./translate": {
+      "types": "./dist/src/translate/node.d.ts",
+      "import": "./dist/src/translate/node.js"
+    },
+    "./plan": {
+      "types": "./dist/src/plan/walk.d.ts",
+      "import": "./dist/src/plan/walk.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "test": "node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@webgpu/types": "0.1.73"
+  },
+  "files": [
+    "dist/src",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Flo4604/render-sdks.git",
+    "directory": "sdks/web/packages/viewer-engine"
+  },
+  "homepage": "https://github.com/Flo4604/render-sdks/tree/main/sdks/web",
+  "publishConfig": {
+    "access": "public"
+  }
+}

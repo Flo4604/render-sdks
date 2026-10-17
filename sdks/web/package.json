@@ -1,0 +1,26 @@
+{
+  "name": "medalbot-web-sdks",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/viewer-engine",
+    "packages/viewer-ui"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run build && npm test --workspaces",
+    "test:browser": "node --test tests/browser/*.test.ts",
+    "size": "node scripts/size.ts",
+    "check:scripts": "tsc -p tsconfig.scripts.json",
+    "pack:check": "npm pack --workspaces --dry-run --ignore-scripts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "playwright-core": "1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.7"
+  }
+}
