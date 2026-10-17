@@ -1,5 +1,14 @@
 # Changes
 
+## Web viewer (unreleased)
+
+| Package | Version |
+| --- | --- |
+| `@medalbot/viewer-engine` | 0.1.0, not published |
+| `@medalbot/viewer-ui` | 0.1.0, not published |
+
+New browser packages under `sdks/web` render an item in 3D with WebGPU from its published closure. The engine is headless; the UI kit adds React components, the `<medalbot-viewer>` custom element and a standalone bundle. Both are copied from the private service repository with `scripts/sync-web.ts` until the engine API is frozen. The existing SDKs are unchanged.
+
 ## Public image variants
 
 | SDK | Version |

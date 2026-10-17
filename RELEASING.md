@@ -1,6 +1,20 @@
 # SDK development and releases
 
-Edit the SDK directly under `sdks/<language>`. This repository owns all client source and tests. It has no private workspace dependency or source export step.
+Edit the SDK directly under `sdks/<language>`. This repository owns all client source and tests. It has no private workspace dependency or source export step, with one interim exception for the web viewer.
+
+## Web viewer sync
+
+The private service repository is the source of truth for `sdks/web/packages/viewer-engine` and `sdks/web/packages/viewer-ui` until the engine API is frozen. Do not edit their synced files here. Change them in the private repository, then copy a revision:
+
+```sh
+node scripts/sync-web.ts <private checkout> --engine-ref <rev> --ui-ref <rev> --dry-run
+node scripts/sync-web.ts <private checkout> --engine-ref <rev> --ui-ref <rev>
+cd sdks/web && npm install && npm test && npm run size
+```
+
+The sync stops without writing when a synced file was changed here since the last sync. Each package's `README.md`, `tsconfig.json` and `LICENSE` are owned here and are never written. Commit the copy together with `sdks/web/sync.json`, which names the source commits. When the engine API is frozen, development moves here: delete the script and `sync.json` and edit the packages in place.
+
+The web packages are not in `scripts/release.mjs` yet and must not be published by hand. See [sdks/web/README.md](sdks/web/README.md).
 
 Run these commands from the repository root. Node 24, uv, Go, and the .NET 8 SDK are required for their respective languages.
 
