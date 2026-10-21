@@ -48,12 +48,12 @@ Omit `Appearance` or use `render.AppearanceDefault` to preserve the original lig
 
 ```go
 images, err := client.Render(ctx, render.RenderRequest{
-    InspectURL: akInspectURL,
+    InspectURL: inspectURL,
     Appearance: render.AppearancePattern,
 })
 ```
 
-The server supports pattern appearance for AK-47 preview, front, and back images. Omit `Views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`; the SDK preserves that error. The server determines support, so the SDK does not restrict items or views locally.
+Pattern appearance supports preview, front, and back for every item in the rendering catalog, including firearms, knives and gloves. Omit `Views` to request all three, or provide a subset. The existing AK-47 pattern preview keeps its original lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`; the SDK preserves that error. The server determines support, so the SDK does not restrict items or views locally.
 
 Network errors and HTTP 429, 502, 503, and 504 receive at most three retries per request. Retries preserve the submission body and idempotency key. `Retry-After` accepts seconds or an HTTP date; the operation deadline bounds the wait. `Config.HTTPClient` lets you supply a transport for proxies, tracing, or tests. The SDK copies the HTTP client and disables redirects to avoid forwarding credentials.
 

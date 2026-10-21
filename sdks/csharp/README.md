@@ -28,12 +28,12 @@ Leave `Appearance` null to keep the original lighting, or set `RenderAppearance.
 ```csharp
 var images = await client.RenderAsync(new RenderRequest
 {
-    InspectUrl = akInspectUrl,
+    InspectUrl = inspectUrl,
     Appearance = RenderAppearance.Pattern,
 });
 ```
 
-The server supports pattern appearance for AK-47 preview, front, and back images. Omit `Views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The SDK sends the requested appearance and leaves item and view support checks to the server.
+Pattern appearance supports preview, front, and back for every item in the rendering catalog, including firearms, knives and gloves. Omit `Views` to request all three, or provide a subset. The existing AK-47 pattern preview keeps its original lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The SDK sends the requested appearance and leaves item and view support checks to the server.
 
 ## Cancellation and timeouts
 
