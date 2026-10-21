@@ -32,7 +32,7 @@ const images = await client.render({
 });
 ```
 
-The API supports pattern appearance for AK-47 preview, front, and back images. Omit `views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The server determines availability; the SDK forwards your requested views without changing them.
+Pattern appearance supports preview, front, and back for every item in the rendering catalog, including firearms, knives and gloves. Omit `views` to request all three, or provide a subset. The existing AK-47 pattern preview keeps its original lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The server determines availability; the SDK forwards your requested views without changing them.
 
 ## Waiting and retries
 

@@ -55,7 +55,7 @@ images = await client.render(
 )
 ```
 
-The option also works with `client.renders.create()`. The server supports pattern appearance for AK-47 preview, front, and back images. Omit `views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. The server determines availability; unsupported items return HTTP 422 with code `unsupported_appearance`.
+The option also works with `client.renders.create()`. Pattern appearance supports preview, front, and back for every item in the rendering catalog, including firearms, knives and gloves. Omit `views` to request all three, or provide a subset. The existing AK-47 pattern preview keeps its original lighting. The server determines availability; unsupported items return HTTP 422 with code `unsupported_appearance`.
 
 The initial request sends `Prefer: wait=10`. If the render is still pending, the SDK polls at intervals from 500 milliseconds to two seconds. The default 120-second deadline covers submission, retry delays, and polling together. Transport failures and HTTP 429, 502, 503, and 504 receive at most four attempts. Retries keep the same idempotency key. Retry delays honor `Retry-After` up to ten seconds.
 
