@@ -21,6 +21,20 @@ The default API URL is `https://render.medalbot.cc`. Supply `baseUrl` for local 
 
 For a StatTrak weapon, `await client.render({ inspectUrl, statTrak: 1337 })` overrides the kill counter in the image. The integer range is 0 to 999999; zero is an explicit override. Omit `statTrak` to preserve the inspected counter. This only changes the render, never the Steam item. A weapon without StatTrak returns `stat_trak_unavailable`.
 
+## Render appearance
+
+`appearance` is optional. Omit it or send `"default"` to preserve the original lighting. Use `"pattern"` for the alternative lighting:
+
+```ts
+const images = await client.render({
+  inspectUrl,
+  views: ["front"],
+  appearance: "pattern",
+});
+```
+
+The API currently supports pattern lighting for AK-47 front images. Other items or views return `unsupported_appearance`. Set `views` explicitly because omitting it requests all three views. The server determines availability; the SDK forwards your requested views without changing them.
+
 ## Waiting and retries
 
 The initial HTTP request asks the server to wait up to ten seconds. A ready result returns immediately. For longer jobs, the SDK polls automatically, starting at 500 milliseconds and backing off to two seconds. The caller's promise resolves only when the requested images are ready.

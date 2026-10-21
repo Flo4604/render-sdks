@@ -1,6 +1,7 @@
 from .client import RenderClient
 from .media import ImageVariant, image_url
 from .models import (
+    Appearance,
     CompletedRender,
     FailedRender,
     Format,
@@ -12,6 +13,7 @@ from .models import (
 )
 
 __all__ = [
+    "Appearance",
     "CompletedRender",
     "FailedRender",
     "Format",

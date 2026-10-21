@@ -2,6 +2,7 @@ namespace Medalbot.Render;
 
 public enum RenderView { Preview, Front, Back }
 public enum ImageFormat { Webp, Png }
+public enum RenderAppearance { Default, Pattern }
 public enum RenderStatus { Queued, Rendering, Processing, Completed, Failed }
 
 public sealed record RenderRequest
@@ -9,6 +10,7 @@ public sealed record RenderRequest
     public required string InspectUrl { get; init; }
     public IReadOnlyList<RenderView>? Views { get; init; }
     public ImageFormat? Format { get; init; }
+    public RenderAppearance? Appearance { get; init; }
     public int? StatTrak { get; init; }
 }
 

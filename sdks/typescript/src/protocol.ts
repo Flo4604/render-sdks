@@ -3,6 +3,8 @@ import { z } from "zod";
 export const View = z.enum(["preview", "front", "back"]);
 export type View = z.infer<typeof View>;
 export const Format = z.enum(["png", "webp"]);
+export const Appearance = z.enum(["default", "pattern"]);
+export type Appearance = z.infer<typeof Appearance>;
 
 export const RenderId = z
   .string()
@@ -17,6 +19,7 @@ export const RenderRequest = z.strictObject({
     .refine((v) => new Set(v).size === v.length, "Views must be unique")
     .default(["preview", "front", "back"]),
   format: Format.default("webp"),
+  appearance: Appearance.optional(),
   statTrak: z.int().min(0).max(999999).optional(),
 });
 export type RenderRequest = z.output<typeof RenderRequest>;

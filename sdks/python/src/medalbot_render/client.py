@@ -16,6 +16,7 @@ import httpx
 from pydantic import ValidationError
 
 from .models import (
+    Appearance,
     CompletedRender,
     FailedRender,
     Format,
@@ -58,12 +59,15 @@ def _submission(
     format: Format,
     idempotency_key: str | None,
     stat_trak: int | None,
+    appearance: Appearance | None,
 ) -> tuple[dict[str, object], _Context, tuple[View, ...]]:
     if not isinstance(inspect_url, str) or not 1 <= len(inspect_url) <= 32768:
         raise ValueError("inspect_url must contain 1 to 32768 characters")
     requested = _views(views)
     if format not in ("webp", "png"):
         raise ValueError("format must be webp or png")
+    if appearance is not None and appearance not in ("default", "pattern"):
+        raise ValueError("appearance must be default or pattern")
     if stat_trak is not None and (
         type(stat_trak) is not int or not 0 <= stat_trak <= 999999
     ):
@@ -78,6 +82,8 @@ def _submission(
     }
     if stat_trak is not None:
         body["statTrak"] = stat_trak
+    if appearance is not None:
+        body["appearance"] = appearance
     return (
         body,
         _Context(idempotency_key=key),
@@ -277,12 +283,13 @@ class RenderClient:
         views: Sequence[View] | None = None,
         format: Format = "webp",
         stat_trak: int | None = None,
+        appearance: Appearance | None = None,
         timeout: float = 120,
         idempotency_key: str | None = None,
     ) -> Images:
         """Return finished images, including cached results, within one total deadline."""
         body, context, requested = _submission(
-            inspect_url, views, format, idempotency_key, stat_trak
+            inspect_url, views, format, idempotency_key, stat_trak, appearance
         )
 
         async def run() -> Images:
@@ -307,11 +314,12 @@ class Renders:
         views: Sequence[View] | None = None,
         format: Format = "webp",
         stat_trak: int | None = None,
+        appearance: Appearance | None = None,
         timeout: float = 120,
         idempotency_key: str | None = None,
     ) -> Render:
         body, context, _ = _submission(
-            inspect_url, views, format, idempotency_key, stat_trak
+            inspect_url, views, format, idempotency_key, stat_trak, appearance
         )
         return await self._client._bounded(
             lambda: self._client._request("POST", "/v1/renders", context, body=body),

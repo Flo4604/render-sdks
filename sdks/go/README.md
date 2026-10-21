@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/sdks/go@v0.1.4
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.5
 ```
 
 ```go
@@ -43,6 +43,18 @@ images, err := client.Render(ctx, render.RenderRequest{
 ```
 
 `Config.Timeout` defaults to 120 seconds and covers submission, retries, and polling together. A shorter context deadline takes precedence. Canceling the context stops the local wait and leaves shared GPU work running. Polls start at 500 milliseconds and increase to a maximum of 2 seconds.
+
+Omit `Appearance` or use `render.AppearanceDefault` to preserve the original lighting. Use `render.AppearancePattern` for the optional pattern lighting:
+
+```go
+images, err := client.Render(ctx, render.RenderRequest{
+    InspectURL: akInspectURL,
+    Views:      []render.View{render.Front},
+    Appearance: render.AppearancePattern,
+})
+```
+
+The server currently supports pattern lighting for AK-47 front views only. Request `Front` explicitly because omitted views request all three views. Unsupported item or view combinations return HTTP 422 with code `unsupported_appearance`; the SDK preserves that error. The server determines support, so the SDK does not restrict items or views locally.
 
 Network errors and HTTP 429, 502, 503, and 504 receive at most three retries per request. Retries preserve the submission body and idempotency key. `Retry-After` accepts seconds or an HTTP date; the operation deadline bounds the wait. `Config.HTTPClient` lets you supply a transport for proxies, tracing, or tests. The SDK copies the HTTP client and disables redirects to avoid forwarding credentials.
 

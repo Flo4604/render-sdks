@@ -189,6 +189,9 @@ func validateInput(input RenderRequest) error {
 	if input.Format != "" && input.Format != PNG && input.Format != WebP {
 		return invalidInput("Format must be png or webp")
 	}
+	if input.Appearance != "" && input.Appearance != AppearanceDefault && input.Appearance != AppearancePattern {
+		return invalidInput("Appearance must be default or pattern")
+	}
 	if input.StatTrak != nil && (*input.StatTrak < 0 || *input.StatTrak > 999999) {
 		return invalidInput("StatTrak must be an integer from 0 to 999999")
 	}

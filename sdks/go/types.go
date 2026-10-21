@@ -32,11 +32,20 @@ const (
 	PNG  Format = "png"
 )
 
+type Appearance string
+
+const (
+	AppearanceDefault Appearance = "default"
+	AppearancePattern Appearance = "pattern"
+)
+
 // RenderRequest defaults to all three views in lossless WebP.
 type RenderRequest struct {
 	InspectURL string `json:"inspectUrl"`
 	Views      []View `json:"views,omitempty"`
 	Format     Format `json:"format,omitempty"`
+	// Appearance selects lighting. The zero value preserves the default rendering.
+	Appearance Appearance `json:"appearance,omitempty"`
 	// StatTrak overrides the displayed counter. Nil preserves the item's counter.
 	StatTrak *int `json:"statTrak,omitempty"`
 }

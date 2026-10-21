@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>Medalbot.Render</PackageId>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
     <Authors>Medalbot</Authors>
     <Description>Await CS2 skin renders with typed views, automatic polling, retries, and public image URLs.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

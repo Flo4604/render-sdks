@@ -114,6 +114,11 @@ public sealed class RenderClient : IDisposable
             throw new ArgumentException("InspectUrl must contain 1 to 32768 characters", nameof(request));
         if (request.Format is { } format && !Enum.IsDefined(format))
             throw new ArgumentException("Unknown image format", nameof(request));
+        if (request.Appearance is { } appearance && !Enum.IsDefined(appearance))
+        {
+            throw new ArgumentException("Unknown render appearance", nameof(request));
+        }
+
         if (request.StatTrak is < 0 or > 999999)
             throw new ArgumentOutOfRangeException(nameof(request), "StatTrak must be between 0 and 999999");
         if (request.Views is { } views && (views.Count is < 1 or > 3 || views.Any(view => !Enum.IsDefined(view)) || views.Distinct().Count() != views.Count))

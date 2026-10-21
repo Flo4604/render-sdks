@@ -77,6 +77,93 @@ tests.Add(("cached result returns images with the public wire format", async () 
 }
 ));
 
+tests.Add(("appearance serializes explicit values and omits unspecified values for Render and Create", async () =>
+{
+    foreach (var create in new[] { false, true })
+    {
+        foreach (var appearance in new RenderAppearance?[] { null, RenderAppearance.Default, RenderAppearance.Pattern })
+        {
+            using var handler = new MockHandler(async (message, _) =>
+            {
+                Equal(HttpMethod.Post, message.Method);
+                Equal(!create, message.Headers.Contains("Prefer"));
+                using var body = JsonDocument.Parse(await message.Content!.ReadAsStringAsync());
+                Equal(appearance.HasValue, body.RootElement.TryGetProperty("appearance", out var value));
+
+                if (appearance.HasValue)
+                {
+                    Equal(appearance == RenderAppearance.Default ? "default" : "pattern", value.GetString());
+                }
+
+                return Response(Complete());
+            });
+            using var client = Client(handler);
+            var appearanceRequest = request with { Appearance = appearance };
+
+            if (create)
+            {
+                Equal(RenderStatus.Completed, (await client.CreateAsync(appearanceRequest)).Status);
+            }
+            else
+            {
+                Equal(front, (await client.RenderAsync(appearanceRequest)).Front);
+            }
+
+            Equal(1, handler.Calls);
+        }
+    }
+}));
+
+tests.Add(("invalid appearances fail before HTTP for Render and Create", async () =>
+{
+    using var handler = new MockHandler((_, _) => throw new Exception("Must not send"));
+    using var client = Client(handler);
+
+    foreach (var appearance in new[] { (RenderAppearance)(-1), (RenderAppearance)99 })
+    {
+        await Throws<ArgumentException>(() => client.RenderAsync(request with { Appearance = appearance }));
+        await Throws<ArgumentException>(() => client.CreateAsync(request with { Appearance = appearance }));
+    }
+
+    Equal(0, handler.Calls);
+}));
+
+tests.Add(("unsupported appearances retain the server error for Render and Create", async () =>
+{
+    foreach (var create in new[] { false, true })
+    {
+        using var handler = new MockHandler(async (message, _) =>
+        {
+            using var body = JsonDocument.Parse(await message.Content!.ReadAsStringAsync());
+            Equal("pattern", body.RootElement.GetProperty("appearance").GetString());
+            Equal(3, body.RootElement.GetProperty("views").GetArrayLength());
+            return Response("{\"meta\":{\"requestId\":\"req_appearance\"},\"error\":{\"code\":\"unsupported_appearance\",\"detail\":\"Pattern lighting is unavailable for these views\"}}", HttpStatusCode.UnprocessableEntity);
+        });
+        using var client = Client(handler);
+        var unsupported = request with
+        {
+            Appearance = RenderAppearance.Pattern,
+            Views = [RenderView.Preview, RenderView.Front, RenderView.Back],
+        };
+        var error = await Throws<RenderException>(async () =>
+        {
+            if (create)
+            {
+                await client.CreateAsync(unsupported);
+            }
+            else
+            {
+                await client.RenderAsync(unsupported);
+            }
+        });
+        Equal("unsupported_appearance", error.Code);
+        Equal("Pattern lighting is unavailable for these views", error.Message);
+        Equal(422, error.StatusCode);
+        Equal("req_appearance", error.RequestId);
+        Equal(1, handler.Calls);
+    }
+}));
+
 tests.Add(("StatTrak serializes explicit zero and omits an unspecified counter", async () =>
 {
     foreach (int? count in new int?[] { null, 0, 1337, 999999 })
