@@ -59,6 +59,25 @@ The default timeout is two minutes for submission and polling together. Cancelli
 
 The result is a set of complete image files. It has no token stream to consume. SSE could add optional progress events later; it is not required to await completion. gRPC is unnecessary for this public HTTP API.
 
+## Post the link early
+
+A bot can post an image link before the render finishes. Submit without waiting, with `links: true`, and use `links.front` at once:
+
+```ts
+const render = await client.renders.create(
+  { inspectUrl, views: ["front"] },
+  { links: true, idempotencyKey: "listing-123-front-v1" },
+);
+const link = "links" in render ? render.links?.front : undefined;
+if (link) {
+  await postEmbed(link);
+}
+```
+
+The link is final at admission. The image host holds a request for a pending link for up to 20 seconds and answers with the image as soon as it exists, so a chat embed that fetches it a few seconds later gets the image instead of a 404. A render that takes longer than the hold, or fails, answers 503 with `Retry-After: 2`; wait for the finished images instead if your client keeps that response. A completed render's links equal its images, and a failed render has no links. Completion still depends on images, so `render()` and `renders.wait()` keep returning finished images.
+
+`links: true` on `renders.create`, `get`, `batch` and `lookup` sends `Prefer: links`, and each batch or lookup item carries its own `links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
+
 ## Image delivery
 
 ```ts

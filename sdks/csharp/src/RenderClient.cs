@@ -54,6 +54,10 @@ public sealed class RenderClient : IDisposable
     public Task<RenderState> GetAsync(string renderId, CancellationToken cancellationToken = default) =>
         Operate(operation => Get(renderId, operation), null, cancellationToken, renderId);
 
+    // Use options.Links to send Prefer: links; options.Timeout bounds the call.
+    public Task<RenderState> GetAsync(string renderId, RenderOptions? options, CancellationToken cancellationToken = default) =>
+        Operate(operation => Get(renderId, operation, options?.Links ?? false), options, cancellationToken, renderId);
+
     public Task<RenderImages> WaitAsync(string renderId, RenderOptions? options = null,
         CancellationToken cancellationToken = default) => Operate(async operation =>
     {
@@ -126,13 +130,21 @@ public sealed class RenderClient : IDisposable
         operation.Key = options?.IdempotencyKey ?? Guid.NewGuid().ToString("N");
         if (operation.Key.Length is < 1 or > 128 || operation.Key.Any(character => character is < '!' or > '~'))
             throw new ArgumentException("IdempotencyKey must contain 1 to 128 printable ASCII characters without spaces", nameof(options));
-        return Request(HttpMethod.Post, "v1/renders", JsonSerializer.Serialize(request, Json), wait, operation);
+        return Request(HttpMethod.Post, "v1/renders", JsonSerializer.Serialize(request, Json), Prefer(wait, options?.Links ?? false), operation);
     }
 
-    private async Task<RenderState> Get(string id, Operation operation)
+    private static string? Prefer(bool wait, bool links) => (wait, links) switch
+    {
+        (true, true) => "wait=10, links",
+        (true, false) => "wait=10",
+        (false, true) => "links",
+        _ => null,
+    };
+
+    private async Task<RenderState> Get(string id, Operation operation, bool links = false)
     {
         if (!IdPattern.IsMatch(id)) throw new ArgumentException("Invalid render ID", nameof(id));
-        var state = await Request(HttpMethod.Get, $"v1/renders/{id}", null, false, operation).ConfigureAwait(false);
+        var state = await Request(HttpMethod.Get, $"v1/renders/{id}", null, Prefer(false, links), operation).ConfigureAwait(false);
         if (state.Id != id) throw InvalidResponse("Response render ID does not match the request");
         return state;
     }
@@ -151,7 +163,7 @@ public sealed class RenderClient : IDisposable
         }
     }
 
-    private async Task<RenderState> Request(HttpMethod method, string path, string? body, bool wait, Operation operation)
+    private async Task<RenderState> Request(HttpMethod method, string path, string? body, string? prefer, Operation operation)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -163,8 +175,8 @@ public sealed class RenderClient : IDisposable
             {
                 request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 request.Headers.Add("Idempotency-Key", operation.Key);
-                if (wait) request.Headers.Add("Prefer", "wait=10");
             }
+            if (prefer is not null) request.Headers.TryAddWithoutValidation("Prefer", prefer);
             try
             {
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, operation.Token).ConfigureAwait(false);
@@ -240,27 +252,14 @@ public sealed class RenderClient : IDisposable
             var id = data.GetProperty("id").GetString();
             if (id is null || !IdPattern.IsMatch(id)) throw InvalidResponse("Response has an invalid render ID");
             RenderImages? images = null;
+            RenderImages? links = null;
             RenderStatus state;
             RenderFailure? failure = null;
             if (data.TryGetProperty("images", out var imageMap))
             {
-                string? preview = null, front = null, back = null;
-                foreach (var image in imageMap.EnumerateObject())
-                {
-                    var url = image.Value.GetString();
-                    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
-                        throw InvalidResponse("Response has an invalid image URL");
-                    switch (image.Name)
-                    {
-                        case "preview": preview = url; break;
-                        case "front": front = url; break;
-                        case "back": back = url; break;
-                        default: throw InvalidResponse("Response has an unknown image view");
-                    }
-                }
-                if (preview is null && front is null && back is null) throw InvalidResponse("Completed render has no images");
+                images = ParseViews(imageMap, "image");
+                if (images is { Preview: null, Front: null, Back: null }) throw InvalidResponse("Completed render has no images");
                 if (data.TryGetProperty("status", out _)) throw InvalidResponse("Completed render must omit status");
-                images = new(preview, front, back);
                 state = RenderStatus.Completed;
             }
             else
@@ -282,7 +281,9 @@ public sealed class RenderClient : IDisposable
                     failure = new(code, detail);
                 }
             }
-            return new(id, state, images, failure, requestId);
+            if (state != RenderStatus.Failed && data.TryGetProperty("links", out var linkMap))
+                links = ParseViews(linkMap, "link");
+            return new(id, state, images, failure, requestId) { Links = links };
         }
         catch (RenderException error)
         {
@@ -296,6 +297,25 @@ public sealed class RenderClient : IDisposable
                 success ? null : (int)status, error)
             { RequestId = requestId };
         }
+    }
+
+    private static RenderImages ParseViews(JsonElement map, string noun)
+    {
+        string? preview = null, front = null, back = null;
+        foreach (var entry in map.EnumerateObject())
+        {
+            var url = entry.Value.GetString();
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+                throw InvalidResponse($"Response has an invalid {noun} URL");
+            switch (entry.Name)
+            {
+                case "preview": preview = url; break;
+                case "front": front = url; break;
+                case "back": back = url; break;
+                default: throw InvalidResponse($"Response has an unknown {noun} view");
+            }
+        }
+        return new(preview, front, back);
     }
 
     private static RenderException InvalidResponse(string detail) => new("invalid_response", detail);

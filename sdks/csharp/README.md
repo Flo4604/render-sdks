@@ -3,7 +3,7 @@
 `RenderAsync` returns finished image URLs, whether the images are cached or need a new render. It handles submission, retries, and polling. The package targets .NET 8 or later and has no package dependencies.
 
 ```sh
-dotnet add package Medalbot.Render --version 0.1.3
+dotnet add package Medalbot.Render --version 0.1.4
 ```
 
 ```csharp
@@ -60,6 +60,24 @@ Resume with `await client.WaitAsync(error.RenderId)` when the render ID is avail
 Pass `RenderClientOptions` to change `BaseUrl` or the default `Timeout`. The default URL is `https://render.medalbot.cc`. A custom `HttpMessageHandler` supports transport configuration and tests. The caller owns that handler and must disable automatic redirects. The default handler disables redirects.
 
 Run the protocol tests with `dotnet run --project tests/Medalbot.Render.Tests.csproj -c Release`. Build the package with `dotnet pack src/Medalbot.Render.csproj -c Release`.
+
+## Post the link early
+
+A bot can post an image link before the render finishes. Submit with `CreateAsync` and `Links = true`, and use `Links.Front` at once:
+
+```csharp
+var state = await client.CreateAsync(
+    new RenderRequest { InspectUrl = inspectUrl, Views = [RenderView.Front] },
+    new RenderOptions { Links = true, IdempotencyKey = "listing-123-front-v1" });
+if (state.Links?.Front is { } link)
+{
+    await PostEmbedAsync(link);
+}
+```
+
+The link is final at admission. The image host holds a request for a pending link for up to 20 seconds and answers with the image as soon as it exists, so a chat embed that fetches it a few seconds later gets the image instead of a 404. A render that takes longer than the hold, or fails, answers 503 with `Retry-After: 2`; wait for the finished images instead if your client keeps that response. A completed render's links equal its images, and a failed render has no links. Completion still depends on images, so `RenderAsync` and `WaitAsync` keep returning finished images.
+
+`RenderOptions.Links` on `CreateAsync` and `GetAsync(id, options)` sends `Prefer: links`; with `RenderAsync` it combines with the wait as `Prefer: wait=10, links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
 
 ## Image delivery
 
