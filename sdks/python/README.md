@@ -51,12 +51,11 @@ Omit `appearance`, pass `None`, or use `appearance="default"` to keep the origin
 ```python
 images = await client.render(
     inspect_url=inspect_url,
-    views=["front"],
     appearance="pattern",
 )
 ```
 
-The option also works with `client.renders.create()`. The server determines which items and views support it. Currently, pattern lighting supports only the AK-47 front view; unsupported combinations return HTTP 422 with code `unsupported_appearance`.
+The option also works with `client.renders.create()`. The server supports pattern appearance for AK-47 preview, front, and back images. Omit `views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. The server determines availability; unsupported items return HTTP 422 with code `unsupported_appearance`.
 
 The initial request sends `Prefer: wait=10`. If the render is still pending, the SDK polls at intervals from 500 milliseconds to two seconds. The default 120-second deadline covers submission, retry delays, and polling together. Transport failures and HTTP 429, 502, 503, and 504 receive at most four attempts. Retries keep the same idempotency key. Retry delays honor `Retry-After` up to ten seconds.
 

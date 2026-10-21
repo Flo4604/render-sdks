@@ -28,12 +28,11 @@ For a StatTrak weapon, `await client.render({ inspectUrl, statTrak: 1337 })` ove
 ```ts
 const images = await client.render({
   inspectUrl,
-  views: ["front"],
   appearance: "pattern",
 });
 ```
 
-The API currently supports pattern lighting for AK-47 front images. Other items or views return `unsupported_appearance`. Set `views` explicitly because omitting it requests all three views. The server determines availability; the SDK forwards your requested views without changing them.
+The API supports pattern appearance for AK-47 preview, front, and back images. Omit `views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The server determines availability; the SDK forwards your requested views without changing them.
 
 ## Waiting and retries
 
