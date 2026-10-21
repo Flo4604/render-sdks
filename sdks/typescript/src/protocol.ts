@@ -25,21 +25,30 @@ export const RenderRequest = z.strictObject({
 export type RenderRequest = z.output<typeof RenderRequest>;
 export type RenderInput = z.input<typeof RenderRequest>;
 
-export const Failure = z.strictObject({ code: z.string(), detail: z.string() });
+// Response schemas use z.object so a field the API adds later is ignored rather than
+// rejected. The SDK still validates every field it reads.
+export const Failure = z.object({ code: z.string(), detail: z.string() });
 
 export const ImageUrls = z.partialRecord(View, z.url());
 export type ImageUrls = z.infer<typeof ImageUrls>;
+// One link per requested view, final at admission. A finished view's link equals its
+// image URL; a pending view's link is a render link the media edge serves once the
+// image exists. Present when the request sends `Prefer: links`, or by default once the
+// API enables links for every response.
+export const ImageLinks = z.partialRecord(View, z.url());
+export type ImageLinks = z.infer<typeof ImageLinks>;
 export const RenderData = z.union([
-  z.strictObject({ id: RenderId, images: ImageUrls }),
-  z.strictObject({
+  z.object({ id: RenderId, images: ImageUrls, links: ImageLinks.optional() }),
+  z.object({
     id: RenderId,
     status: z.enum(["queued", "rendering", "processing"]),
+    links: ImageLinks.optional(),
   }),
-  z.strictObject({ id: RenderId, status: z.literal("failed"), error: Failure }),
+  z.object({ id: RenderId, status: z.literal("failed"), error: Failure }),
 ]);
 export type RenderData = z.infer<typeof RenderData>;
-export const ResponseMeta = z.strictObject({ requestId: z.string().min(1) });
-export const RenderEnvelope = z.strictObject({
+export const ResponseMeta = z.object({ requestId: z.string().min(1) });
+export const RenderEnvelope = z.object({
   meta: ResponseMeta,
   data: RenderData,
 });
@@ -53,7 +62,7 @@ export const ErrorEnvelope = z.object({
     type: z.string(),
   }),
 });
-export const RenderBatchEnvelope = z.strictObject({
+export const RenderBatchEnvelope = z.object({
   meta: ResponseMeta,
-  data: z.strictObject({ renders: z.array(RenderData.nullable()) }),
+  data: z.object({ renders: z.array(RenderData.nullable()) }),
 });

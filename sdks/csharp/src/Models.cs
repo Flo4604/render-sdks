@@ -26,8 +26,16 @@ public sealed record RenderImages(string? Preview, string? Front, string? Back)
 }
 
 public sealed record RenderFailure(string Code, string Detail);
+// The parser reads the fields below and ignores response fields this version does not know.
 public sealed record RenderState(string Id, RenderStatus Status, RenderImages? Images,
-    RenderFailure? Error, string RequestId);
+    RenderFailure? Error, string RequestId)
+{
+    // One URL per requested view, final at admission. A finished view's link equals its image URL;
+    // a pending view's link is served by the media edge once the image exists. Present on pending and
+    // completed states when the request sets RenderOptions.Links, or by default once the API enables
+    // links. Completion still depends on Images.
+    public RenderImages? Links { get; init; }
+}
 
 public sealed record RenderClientOptions
 {
@@ -39,6 +47,9 @@ public sealed record RenderOptions
 {
     public string? IdempotencyKey { get; init; }
     public TimeSpan? Timeout { get; init; }
+    // Sends Prefer: links so the returned state carries Links. It composes with the wait preference
+    // (Prefer: wait=10, links). Once the API returns links by default, it changes nothing.
+    public bool Links { get; init; }
 }
 
 public sealed class RenderException : Exception

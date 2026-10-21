@@ -60,16 +60,30 @@ type Failure struct {
 
 // Render is a render state. Completed responses have Status "completed" here,
 // although the wire response identifies completion by its images field.
+// Decoding ignores response fields this version does not know.
 type Render struct {
-	ID        string   `json:"id"`
-	Status    string   `json:"status,omitempty"`
-	Images    Images   `json:"images,omitempty"`
+	ID     string `json:"id"`
+	Status string `json:"status,omitempty"`
+	Images Images `json:"images,omitempty"`
+	// Links maps each requested view to a URL that is final at admission. A finished
+	// view's link equals its image URL. Pending and completed states carry it when the
+	// request asks for links, or by default once the API enables links. Failed states
+	// have none. Completion still depends on Images, not Links.
+	Links     Images   `json:"links,omitempty"`
 	Error     *Failure `json:"error,omitempty"`
 	RequestID string   `json:"-"`
 }
 
 // SubmitOptions allows retries across separate calls to reuse the same admission.
-type SubmitOptions struct{ IdempotencyKey string }
+// Links sends Prefer: links, so the returned state carries Links. Once the API
+// returns links by default, Links changes nothing.
+type SubmitOptions struct {
+	IdempotencyKey string
+	Links          bool
+}
+
+// GetOptions configures Get. Links sends Prefer: links, as in SubmitOptions.
+type GetOptions struct{ Links bool }
 
 // Error preserves identifiers needed to inspect or resume a render.
 // Errors caused by cancellation or deadlines support errors.Is.

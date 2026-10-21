@@ -88,10 +88,14 @@ func (c *Client) Create(ctx context.Context, input RenderRequest, options ...Sub
 }
 
 // Get retrieves the current render state.
-func (c *Client) Get(ctx context.Context, id string) (*Render, error) {
+func (c *Client) Get(ctx context.Context, id string, options ...GetOptions) (*Render, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	result, err := c.get(ctx, id)
+	if len(options) > 1 {
+		return nil, enrich(invalidInput("Provide at most one GetOptions value"), id, "")
+	}
+	links := len(options) == 1 && options[0].Links
+	result, err := c.getWith(ctx, id, links)
 	return result, enrich(err, id, "")
 }
 
@@ -117,9 +121,9 @@ func (c *Client) submit(ctx context.Context, input RenderRequest, wait bool, opt
 	if len(options) > 1 {
 		return nil, "", invalidInput("Provide at most one SubmitOptions value")
 	}
-	key := ""
+	key, links := "", false
 	if len(options) == 1 {
-		key = options[0].IdempotencyKey
+		key, links = options[0].IdempotencyKey, options[0].Links
 	}
 	if key == "" {
 		var entropy [16]byte
@@ -136,18 +140,26 @@ func (c *Client) submit(ctx context.Context, input RenderRequest, wait bool, opt
 		return nil, key, err
 	}
 	headers := http.Header{"Idempotency-Key": {key}}
-	if wait {
-		headers.Set("Prefer", "wait=10")
+	if value := prefer(wait, links); value != "" {
+		headers.Set("Prefer", value)
 	}
 	result, err := c.request(ctx, http.MethodPost, "/v1/renders", body, headers)
 	return result, key, err
 }
 
 func (c *Client) get(ctx context.Context, id string) (*Render, error) {
+	return c.getWith(ctx, id, false)
+}
+
+func (c *Client) getWith(ctx context.Context, id string, links bool) (*Render, error) {
 	if !renderIDPattern.MatchString(id) {
 		return nil, invalidInput("Invalid render ID")
 	}
-	result, err := c.request(ctx, http.MethodGet, "/v1/renders/"+id, nil, nil)
+	var headers http.Header
+	if links {
+		headers = http.Header{"Prefer": {prefer(false, true)}}
+	}
+	result, err := c.request(ctx, http.MethodGet, "/v1/renders/"+id, nil, headers)
 	if err == nil && result.ID != id {
 		return nil, invalidResponse("Response render ID does not match the request")
 	}
@@ -205,6 +217,18 @@ func validateInput(input RenderRequest) error {
 	return nil
 }
 
+// prefer composes the Prefer header, for example "wait=10, links".
+func prefer(wait, links bool) string {
+	var values []string
+	if wait {
+		values = append(values, "wait=10")
+	}
+	if links {
+		values = append(values, "links")
+	}
+	return strings.Join(values, ", ")
+}
+
 func validView(view View) bool { return view == Preview || view == Front || view == Back }
 
 func validateRender(result *Render) error {
@@ -224,12 +248,21 @@ func validateRender(result *Render) error {
 		return invalidResponse("Completed render has no images")
 	}
 	for view, imageURL := range result.Images {
-		u, err := url.Parse(imageURL)
-		if !validView(view) || err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		if !validURL(view, imageURL) {
 			return invalidResponse(fmt.Sprintf("Response has an invalid %s image URL", view))
 		}
 	}
+	for view, link := range result.Links {
+		if !validURL(view, link) {
+			return invalidResponse(fmt.Sprintf("Response has an invalid %s link", view))
+		}
+	}
 	return nil
+}
+
+func validURL(view View, value string) bool {
+	u, err := url.Parse(value)
+	return validView(view) && err == nil && u.Host != "" && (u.Scheme == "https" || u.Scheme == "http")
 }
 
 func invalidInput(detail string) *Error    { return &Error{Code: "invalid_input", Detail: detail} }

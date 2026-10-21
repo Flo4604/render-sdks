@@ -21,6 +21,13 @@ export class RenderError extends Error {
 }
 export type WaitOptions = { signal?: AbortSignal; timeoutMs?: number };
 export type RenderOptions = WaitOptions & { idempotencyKey?: string };
+// `links: true` sends `Prefer: links`, so pending and completed render data carry a
+// `links` map. Once the API returns links by default, the option changes nothing.
+export type LinkOptions = { links?: boolean };
+const prefer = (wait: boolean, links: boolean | undefined) => {
+  const values = [...(wait ? ["wait=10"] : []), ...(links ? ["links"] : [])];
+  return values.length > 0 ? { Prefer: values.join(", ") } : {};
+};
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
@@ -51,23 +58,24 @@ export class RenderClient {
   ) {
     this.fetcher = options.fetch ?? fetch;
     this.renders = {
-      create: (input: RenderInput, options: RenderOptions = {}) =>
+      create: (input: RenderInput, options: RenderOptions & LinkOptions = {}) =>
         this.submit(input, options, false),
-      get: async (id: string, options: WaitOptions = {}) =>
+      get: async (id: string, options: WaitOptions & LinkOptions = {}) =>
         RenderEnvelope.parse(
-          await this.request(
-            `/v1/renders/${RenderId.parse(id)}`,
-            options.signal ? { signal: options.signal } : {},
-          ),
+          await this.request(`/v1/renders/${RenderId.parse(id)}`, {
+            headers: prefer(false, options.links),
+            ...(options.signal ? { signal: options.signal } : {}),
+          }),
         ).data,
       wait: (id: string, options: WaitOptions = {}) => this.wait(id, options),
       batch: async (
         requests: { request: RenderInput; idempotencyKey: string }[],
-        options: WaitOptions = {},
+        options: WaitOptions & LinkOptions = {},
       ) =>
         RenderBatchEnvelope.parse(
           await this.request("/v1/renders/batch", {
             method: "POST",
+            headers: prefer(false, options.links),
             body: JSON.stringify({
               requests: requests.map(({ request, idempotencyKey }) => ({
                 request: RenderRequest.parse(request),
@@ -84,10 +92,11 @@ export class RenderClient {
             );
           return render;
         }),
-      lookup: async (ids: string[], options: WaitOptions = {}) =>
+      lookup: async (ids: string[], options: WaitOptions & LinkOptions = {}) =>
         RenderBatchEnvelope.parse(
           await this.request("/v1/renders/lookup", {
             method: "POST",
+            headers: prefer(false, options.links),
             body: JSON.stringify({ ids }),
             ...(options.signal ? { signal: options.signal } : {}),
           }),
@@ -96,7 +105,7 @@ export class RenderClient {
   }
   private async submit(
     input: RenderInput,
-    options: RenderOptions,
+    options: RenderOptions & LinkOptions,
     wait: boolean,
   ) {
     return RenderEnvelope.parse(
@@ -105,7 +114,7 @@ export class RenderClient {
         body: JSON.stringify(RenderRequest.parse(input)),
         headers: {
           "Idempotency-Key": options.idempotencyKey ?? crypto.randomUUID(),
-          ...(wait ? { Prefer: "wait=10" } : {}),
+          ...prefer(wait, options.links),
         },
         ...(options.signal ? { signal: options.signal } : {}),
       }),
@@ -273,6 +282,7 @@ export type {
   Appearance,
   RenderInput,
   RenderData,
+  ImageLinks,
   ImageUrls,
   View,
 } from "./protocol.js";

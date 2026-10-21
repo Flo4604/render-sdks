@@ -431,6 +431,104 @@ tests.Add(("default transport rejects redirects instead of forwarding the API ke
 }
 ));
 
+const string link = "https://img.medalbot.cc/r/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+// A 202 with links and fields this SDK version does not know.
+string PendingWithLinks() => "{\"meta\":{\"requestId\":\"req_links\",\"region\":\"future\"},\"future\":true,\"data\":{\"id\":\"" + id + "\",\"status\":\"queued\",\"position\":3,\"links\":{\"front\":\"" + link + "\"}}}";
+string CompletedWithLinks() => "{\"meta\":{\"requestId\":\"req_links\"},\"data\":{\"id\":\"" + id + "\",\"images\":{\"front\":\"" + front + "\"},\"links\":{\"front\":\"" + front + "\"},\"cache\":\"hit\"}}";
+const string linksUnavailable = "{\"meta\":{\"requestId\":\"req_links\"},\"error\":{\"code\":\"render_links_unavailable\",\"detail\":\"Render links are unavailable\",\"status\":503,\"title\":\"Service Unavailable\",\"type\":\"urn:skinicon:error:render_links_unavailable\"}}";
+string? PreferOf(HttpRequestMessage message) => message.Headers.TryGetValues("Prefer", out var values) ? string.Join(", ", values) : null;
+
+tests.Add(("a 202 with links and unknown fields parses", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(PendingWithLinks(), HttpStatusCode.Accepted)));
+    using var client = Client(handler);
+    var state = await client.CreateAsync(request);
+    Equal(RenderStatus.Queued, state.Status);
+    Equal(null, state.Images);
+    Equal(link, state.Links!.Front);
+    Equal(null, state.Links.Back);
+}));
+
+tests.Add(("a completed render carries links equal to its images", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(CompletedWithLinks())));
+    using var client = Client(handler);
+    var state = await client.GetAsync(id, new RenderOptions { Links = true });
+    Equal(RenderStatus.Completed, state.Status);
+    Equal(state.Images, state.Links);
+}));
+
+tests.Add(("RenderAsync completes on images and ignores pending links", async () =>
+{
+    var calls = 0;
+    using var handler = new MockHandler((_, _) => Task.FromResult(++calls == 1
+        ? Response(PendingWithLinks(), HttpStatusCode.Accepted)
+        : Response(CompletedWithLinks())));
+    using var client = Client(handler);
+    var images = await client.RenderAsync(request);
+    Equal(front, images.Front);
+    Equal(2, handler.Calls);
+}));
+
+tests.Add(("Links sends Prefer: links and composes with the wait preference", async () =>
+{
+    var prefers = new List<string?>();
+    using var handler = new MockHandler((message, _) =>
+    {
+        prefers.Add(PreferOf(message));
+        return Task.FromResult(Response(CompletedWithLinks()));
+    });
+    using var client = Client(handler);
+    var links = new RenderOptions { Links = true };
+    await client.CreateAsync(request, links);
+    await client.GetAsync(id, links);
+    await client.RenderAsync(request, links);
+    await client.CreateAsync(request);
+    await client.GetAsync(id);
+    await client.RenderAsync(request);
+    Equal("links|links|wait=10, links|<none>|<none>|wait=10", string.Join("|", prefers.Select(value => value ?? "<none>")));
+}));
+
+tests.Add(("503 render_links_unavailable retries with the same idempotency key", async () =>
+{
+    var keys = new List<string>();
+    using var handler = new MockHandler((message, _) =>
+    {
+        keys.Add(message.Headers.GetValues("Idempotency-Key").Single());
+        if (keys.Count == 1)
+        {
+            var unavailable = Response(linksUnavailable, HttpStatusCode.ServiceUnavailable);
+            unavailable.Headers.RetryAfter = new(TimeSpan.FromSeconds(1));
+            return Task.FromResult(unavailable);
+        }
+        return Task.FromResult(Response(PendingWithLinks(), HttpStatusCode.Accepted));
+    });
+    using var client = Client(handler);
+    var started = DateTime.UtcNow;
+    var state = await client.CreateAsync(request, new() { Links = true, IdempotencyKey = "fixture-key" });
+    Equal(link, state.Links!.Front);
+    Equal("fixture-key,fixture-key", string.Join(",", keys));
+    if (DateTime.UtcNow - started < TimeSpan.FromMilliseconds(900)) throw new Exception("Retry-After was not honored");
+}));
+
+tests.Add(("a persistent 503 render_links_unavailable surfaces its code", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(linksUnavailable, HttpStatusCode.ServiceUnavailable)));
+    using var client = Client(handler, TimeSpan.FromSeconds(10));
+    var error = await Throws<RenderException>(() => client.CreateAsync(request, new() { Links = true }));
+    Equal("render_links_unavailable", error.Code);
+    Equal(503, error.StatusCode);
+    Equal(4, handler.Calls);
+}));
+
+tests.Add(("an invalid link is rejected", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(Envelope(new { id, status = "queued", links = new { front = "nope" } }), HttpStatusCode.Accepted)));
+    using var client = Client(handler);
+    var error = await Throws<RenderException>(() => client.CreateAsync(request));
+    Equal("invalid_response", error.Code);
+}));
+
 var failures = 0;
 foreach (var (name, run) in tests)
 {
