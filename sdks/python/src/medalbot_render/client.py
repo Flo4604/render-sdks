@@ -192,12 +192,14 @@ class RenderClient:
         *,
         body: dict[str, object] | None = None,
         wait: bool = False,
+        links: bool = False,
     ) -> Render:
         headers = {}
         if context.idempotency_key and method == "POST":
             headers["Idempotency-Key"] = context.idempotency_key
-        if wait:
-            headers["Prefer"] = "wait=10"
+        preferences = (["wait=10"] if wait else []) + (["links"] if links else [])
+        if preferences:
+            headers["Prefer"] = ", ".join(preferences)
         for attempt in range(4):
             try:
                 response = await self._http.request(
@@ -317,21 +319,33 @@ class Renders:
         appearance: Appearance | None = None,
         timeout: float = 120,
         idempotency_key: str | None = None,
+        links: bool = False,
     ) -> Render:
+        """Submit without waiting. ``links=True`` sends ``Prefer: links``.
+
+        The option has no effect once the API returns links by default.
+        """
         body, context, _ = _submission(
             inspect_url, views, format, idempotency_key, stat_trak, appearance
         )
         return await self._client._bounded(
-            lambda: self._client._request("POST", "/v1/renders", context, body=body),
+            lambda: self._client._request(
+                "POST", "/v1/renders", context, body=body, links=links
+            ),
             timeout,
             context,
         )
 
-    async def get(self, render_id: str, *, timeout: float = 120) -> Render:
+    async def get(
+        self, render_id: str, *, timeout: float = 120, links: bool = False
+    ) -> Render:
+        """Read the current state. ``links=True`` sends ``Prefer: links``."""
         _validate_id(render_id)
         context = _Context(render_id=render_id)
         return await self._client._bounded(
-            lambda: self._client._request("GET", f"/v1/renders/{render_id}", context),
+            lambda: self._client._request(
+                "GET", f"/v1/renders/{render_id}", context, links=links
+            ),
             timeout,
             context,
         )

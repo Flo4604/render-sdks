@@ -29,7 +29,9 @@ ImageUrl = Annotated[str, AfterValidator(_validate_url)]
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    # Ignore response fields this version does not know, so a field the API adds
+    # later does not break parsing. Known fields stay strictly validated.
+    model_config = ConfigDict(strict=True, frozen=True, extra="ignore")
 
 
 class Failure(_Model):
@@ -40,11 +42,16 @@ class Failure(_Model):
 class CompletedRender(_Model):
     id: RenderId
     images: dict[View, ImageUrl] = Field(min_length=1, max_length=3)
+    # Equals ``images`` when present. See ``PendingRender.links``.
+    links: dict[View, ImageUrl] | None = None
 
 
 class PendingRender(_Model):
     id: RenderId
     status: Literal["queued", "rendering", "processing"]
+    # One URL per requested view, final at admission. The media edge serves it once
+    # the image exists. Present with ``links=True`` or once the API defaults links on.
+    links: dict[View, ImageUrl] | None = None
 
 
 class FailedRender(_Model):

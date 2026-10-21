@@ -93,6 +93,26 @@ uv run --project sdks/python --extra dev mypy --strict sdks/python/src
 uv build --project sdks/python
 ```
 
+## Post the link early
+
+A bot can post an image link before the render finishes. Submit without waiting, with `links=True`, and use `links["front"]` at once:
+
+```python
+result = await client.renders.create(
+    inspect_url=inspect_url,
+    views=["front"],
+    links=True,
+    idempotency_key="listing-123-front-v1",
+)
+links = getattr(result, "links", None) or {}
+if "front" in links:
+    await post_embed(links["front"])
+```
+
+The link is final at admission. The image host holds a request for a pending link for up to 20 seconds and answers with the image as soon as it exists, so a chat embed that fetches it a few seconds later gets the image instead of a 404. A render that takes longer than the hold, or fails, answers 503 with `Retry-After: 2`; wait for the finished images instead if your client keeps that response. A completed render's links equal its images, and a failed render has no links. Completion still depends on images, so `render()` and `renders.wait()` keep returning finished images.
+
+`links=True` on `renders.create()` and `renders.get()` sends `Prefer: links`; `PendingRender` and `CompletedRender` expose it as `links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
+
 ## Image delivery
 
 ```python
