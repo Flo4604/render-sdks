@@ -16,7 +16,7 @@ HttpResponseMessage Response(string body, HttpStatusCode status = HttpStatusCode
 {
     Content = new StringContent(body, Encoding.UTF8, "application/json"),
 };
-RenderClient Client(MockHandler handler, TimeSpan? timeout = null) => new("test-key", new() { Timeout = timeout ?? TimeSpan.FromSeconds(5) }, handler);
+RenderClient Client(MockHandler handler, TimeSpan? timeout = null) => new("test-key", new() { Timeout = timeout ?? TimeSpan.FromSeconds(5), Telemetry = false }, handler);
 void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}"); }
 async Task<T> Throws<T>(Func<Task> action) where T : Exception
 {
@@ -420,7 +420,7 @@ tests.Add(("default transport rejects redirects instead of forwarding the API ke
         }
         catch (OperationCanceledException) { }
     });
-    using var client = new RenderClient("test-key", new() { BaseUrl = new($"http://127.0.0.1:{port}") });
+    using var client = new RenderClient("test-key", new() { BaseUrl = new($"http://127.0.0.1:{port}"), Telemetry = false });
     try
     {
         var error = await Throws<RenderException>(() => client.RenderAsync(request));
@@ -527,6 +527,149 @@ tests.Add(("an invalid link is rejected", async () =>
     using var client = Client(handler);
     var error = await Throws<RenderException>(() => client.CreateAsync(request));
     Equal("invalid_response", error.Code);
+}));
+
+// A server that queues the render once, then completes it, and records every request.
+(MockHandler Handler, List<HttpRequestMessage> Renders, List<JsonElement> Batches) TelemetryServer(int telemetryStatus = 202, bool fail = false)
+{
+    var renders = new List<HttpRequestMessage>();
+    var batches = new List<JsonElement>();
+    var handler = new MockHandler(async (message, token) =>
+    {
+        if (message.RequestUri!.AbsolutePath == "/v1/telemetry/sdk")
+        {
+            var body = await message.Content!.ReadAsStringAsync(token);
+            if (message.Headers.Authorization?.Parameter != "test-key" || body.Contains("test-key"))
+                throw new Exception("telemetry must authenticate with the key and never carry it");
+            lock (batches) batches.Add(JsonDocument.Parse(body).RootElement.Clone());
+            return new HttpResponseMessage((HttpStatusCode)telemetryStatus);
+        }
+        lock (renders) renders.Add(message);
+        if (fail)
+        {
+            var failed = Response(JsonSerializer.Serialize(new { meta = new { requestId = "req_failed" }, error = new { code = "unsupported_item", detail = "x" } }), HttpStatusCode.UnprocessableEntity);
+            failed.Headers.Add("X-Request-Id", "req_failed");
+            return failed;
+        }
+        if (message.Method == HttpMethod.Post)
+        {
+            var queued = Response(Queued(), HttpStatusCode.Accepted);
+            queued.Headers.Add("X-Request-Id", "req_submit");
+            queued.Headers.Add("X-Trace-Id", new string('a', 32));
+            queued.Headers.Add("X-Render-Cache", "miss");
+            queued.Headers.TryAddWithoutValidation("Server-Timing", "app;dur=1890.25");
+            return queued;
+        }
+        var complete = Response(Complete());
+        complete.Headers.TryAddWithoutValidation("Server-Timing", "app;dur=3.5");
+        return complete;
+    });
+    return (handler, renders, batches);
+}
+RenderClient TelemetryClient(MockHandler handler, RenderClientOptions options) => new("test-key", options with { Timeout = TimeSpan.FromSeconds(10) }, handler);
+string Header(HttpRequestMessage message, string name) => message.Headers.TryGetValues(name, out var values) ? string.Join(" ", values) : "";
+
+tests.Add(("every request names the SDK and carries one trace per call", async () =>
+{
+    var (handler, renders, _) = TelemetryServer();
+    using var client = TelemetryClient(handler, new() { Telemetry = false });
+    await client.RenderAsync(request);
+    await client.RenderAsync(request);
+    var version = typeof(RenderClient).Assembly.GetName().Version!;
+    var expected = $"{version.Major}.{version.Minor}.{version.Build}";
+    var parents = new List<string>();
+    foreach (var message in renders)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(Header(message, "User-Agent"), $@"^medalbot-render-csharp/{expected} \(dotnet/[\d.]+; [a-z]+\)$"))
+            throw new Exception($"User-Agent {Header(message, "User-Agent")}");
+        Equal($"csharp/{expected}", Header(message, "X-Medalbot-SDK"));
+        var parent = Header(message, "traceparent");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(parent, "^00-[0-9a-f]{32}-[0-9a-f]{16}-01$")) throw new Exception($"traceparent {parent}");
+        parents.Add(parent);
+    }
+    Equal(parents[0].Split('-')[1], parents[1].Split('-')[1]);
+    if (parents[0] == parents[1] || parents[0].Split('-')[1] == parents[2].Split('-')[1]) throw new Exception("each request has a span and each call a trace");
+}));
+
+tests.Add(("a render call reports its timings, server ids and request counts", async () =>
+{
+    var (handler, renders, batches) = TelemetryServer();
+    using var client = TelemetryClient(handler, new() { TelemetrySampleRate = 1 });
+    await client.RenderAsync(request);
+    await client.FlushTelemetryAsync();
+    Equal(1, batches.Count);
+    var batch = batches[0];
+    Equal(1, batch.GetProperty("schema").GetInt32());
+    Equal("csharp", batch.GetProperty("sdk").GetProperty("name").GetString());
+    var e = batch.GetProperty("events")[0];
+    Equal("sdk_call", e.GetProperty("name").GetString());
+    Equal(1.0, e.GetProperty("sample_rate").GetDouble());
+    var fields = e.GetProperty("fields");
+    Equal("render", fields.GetProperty("op").GetString());
+    Equal("ok", fields.GetProperty("outcome").GetString());
+    Equal(1, fields.GetProperty("views").GetInt32());
+    Equal(2, fields.GetProperty("requests").GetInt32());
+    Equal(1, fields.GetProperty("polls").GetInt32());
+    Equal(0, fields.GetProperty("retries").GetInt32());
+    Equal(1894.0, fields.GetProperty("server_ms").GetDouble());
+    Equal("req_submit", fields.GetProperty("request_id").GetString());
+    Equal(new string('a', 32), fields.GetProperty("server_trace_id").GetString());
+    Equal("miss", fields.GetProperty("cache").GetString());
+    Equal(id, fields.GetProperty("render_id").GetString());
+    Equal(0, fields.GetProperty("inflight").GetInt32());
+    Equal(Header(renders[0], "traceparent").Split('-')[1], fields.GetProperty("trace_id").GetString());
+    if (fields.GetProperty("poll_wait_ms").GetDouble() < 450) throw new Exception("poll wait is counted");
+    if (fields.GetProperty("total_ms").GetDouble() < fields.GetProperty("poll_wait_ms").GetDouble()) throw new Exception("total covers the wait");
+}));
+
+tests.Add(("a failed call is always reported with its code", async () =>
+{
+    var (handler, _, batches) = TelemetryServer(fail: true);
+    using var client = TelemetryClient(handler, new() { TelemetrySampleRate = 0.000001 });
+    await Throws<RenderException>(() => client.RenderAsync(request));
+    await client.FlushTelemetryAsync();
+    var e = batches[0].GetProperty("events")[0];
+    Equal(1.0, e.GetProperty("sample_rate").GetDouble());
+    Equal("error", e.GetProperty("fields").GetProperty("outcome").GetString());
+    Equal("unsupported_item", e.GetProperty("fields").GetProperty("code").GetString());
+    Equal(422, e.GetProperty("fields").GetProperty("status").GetInt32());
+    Equal("req_failed", e.GetProperty("fields").GetProperty("request_id").GetString());
+}));
+
+tests.Add(("telemetry off sends nothing, from the option or the environment", async () =>
+{
+    var (handler, _, batches) = TelemetryServer();
+    using (var off = TelemetryClient(handler, new() { Telemetry = false, TelemetrySampleRate = 1 }))
+    {
+        await off.RenderAsync(request);
+        await off.FlushTelemetryAsync();
+    }
+    Environment.SetEnvironmentVariable("MEDALBOT_TELEMETRY", "0");
+    try
+    {
+        using var env = TelemetryClient(handler, new() { TelemetrySampleRate = 1 });
+        await env.RenderAsync(request);
+        await env.FlushTelemetryAsync();
+    }
+    finally { Environment.SetEnvironmentVariable("MEDALBOT_TELEMETRY", null); }
+    Equal(0, batches.Count);
+}));
+
+tests.Add(("a refused report stops reports, and Dispose sends what is buffered", async () =>
+{
+    var (handler, _, batches) = TelemetryServer(telemetryStatus: 404);
+    using (var client = TelemetryClient(handler, new() { TelemetrySampleRate = 1 }))
+    {
+        await client.RenderAsync(request);
+        await client.FlushTelemetryAsync();
+        await client.RenderAsync(request);
+        await client.FlushTelemetryAsync();
+    }
+    Equal(1, batches.Count);
+    var (accepting, _, sent) = TelemetryServer();
+    using (var client = TelemetryClient(accepting, new() { TelemetrySampleRate = 1 }))
+        await client.RenderAsync(request);
+    Equal(1, sent.Count);
 }));
 
 var failures = 0;

@@ -3,6 +3,7 @@ import pytest
 
 from medalbot_render import CompletedRender, PendingRender, RenderClient, RenderError
 from medalbot_render.client import _Context
+from medalbot_render.telemetry import Call
 
 ID = "rnd_01ARZ3NDEKTSV4RRFFQ69G5FAV"
 IMAGE = "https://img.medalbot.cc/v1/example.webp"
@@ -88,7 +89,13 @@ async def test_links_preference_header():
         await client.renders.get(ID)
         # The wait and links preferences compose into one header.
         await client._request(
-            "POST", "/v1/renders", _Context(), body={}, wait=True, links=True
+            "POST",
+                "/v1/renders",
+                _Context(),
+                Call("create", 0),
+                body={},
+                wait=True,
+                links=True,
         )
     assert prefers == ["links", "links", None, None, "wait=10, links"]
 

@@ -12,6 +12,8 @@ public sealed class RenderClient : IDisposable
     private readonly HttpClient http;
     private readonly TimeSpan timeout;
     private readonly string apiKey;
+    private readonly TelemetryReporter? reporter;
+    private int inflight;
     private static readonly Regex IdPattern = new("^rnd_(?:[0-7][0-9A-HJKMNP-TV-Z]{25}|[a-f0-9]{32})$", RegexOptions.CultureInvariant);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -36,51 +38,81 @@ public sealed class RenderClient : IDisposable
             BaseAddress = new Uri(options.BaseUrl.AbsoluteUri.TrimEnd('/') + "/"),
             Timeout = System.Threading.Timeout.InfiniteTimeSpan,
         };
+        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", Identity.UserAgent);
+        http.DefaultRequestHeaders.TryAddWithoutValidation("X-Medalbot-SDK", Identity.SdkHeader);
+        reporter = TelemetryReporter.Create(http, apiKey, options);
     }
 
+    // Sends buffered call timings now. Short-lived processes can await it before they exit;
+    // the client also sends every ten seconds and on Dispose.
+    public Task FlushTelemetryAsync(CancellationToken cancellationToken = default) =>
+        reporter?.FlushAsync(cancellationToken) ?? Task.CompletedTask;
+
     public Task<RenderImages> RenderAsync(RenderRequest request, RenderOptions? options = null,
-        CancellationToken cancellationToken = default) => Operate(async operation =>
+        CancellationToken cancellationToken = default) => Operate("render", request?.Views?.Count ?? 3, async operation =>
     {
-        var state = await Submit(request, options, wait: true, operation).ConfigureAwait(false);
+        var state = await Submit(request!, options, wait: true, operation).ConfigureAwait(false);
         var images = await Poll(state, operation).ConfigureAwait(false);
-        foreach (var view in request.Views ?? [RenderView.Preview, RenderView.Front, RenderView.Back])
+        foreach (var view in request!.Views ?? [RenderView.Preview, RenderView.Front, RenderView.Back])
             if (images[view] is null) throw InvalidResponse($"Completed render is missing {view}");
         return images;
     }, options, cancellationToken);
 
     public Task<RenderState> CreateAsync(RenderRequest request, RenderOptions? options = null,
-        CancellationToken cancellationToken = default) => Operate(operation => Submit(request, options, wait: false, operation), options, cancellationToken);
+        CancellationToken cancellationToken = default) => Operate("create", null, operation => Submit(request, options, wait: false, operation), options, cancellationToken);
 
     public Task<RenderState> GetAsync(string renderId, CancellationToken cancellationToken = default) =>
-        Operate(operation => Get(renderId, operation), null, cancellationToken, renderId);
+        Operate("get", null, operation => Get(renderId, operation), null, cancellationToken, renderId);
 
     // Use options.Links to send Prefer: links; options.Timeout bounds the call.
     public Task<RenderState> GetAsync(string renderId, RenderOptions? options, CancellationToken cancellationToken = default) =>
-        Operate(operation => Get(renderId, operation, options?.Links ?? false), options, cancellationToken, renderId);
+        Operate("get", null, operation => Get(renderId, operation, options?.Links ?? false), options, cancellationToken, renderId);
 
     public Task<RenderImages> WaitAsync(string renderId, RenderOptions? options = null,
-        CancellationToken cancellationToken = default) => Operate(async operation =>
+        CancellationToken cancellationToken = default) => Operate("wait", null, async operation =>
     {
         var state = await Get(renderId, operation).ConfigureAwait(false);
         return await Poll(state, operation).ConfigureAwait(false);
     }, options, cancellationToken, renderId);
 
-    private sealed class Operation(CancellationToken token)
+    private sealed class Operation(CancellationToken token, CallTrace call)
     {
         public CancellationToken Token { get; } = token;
+        public CallTrace Call { get; } = call;
         public string? RenderId { get; set; }
         public string? RequestId { get; set; }
         public string? Key { get; set; }
     }
 
-    private async Task<T> Operate<T>(Func<Operation, Task<T>> action, RenderOptions? options,
+    private async Task<T> Operate<T>(string op, int? views, Func<Operation, Task<T>> action, RenderOptions? options,
         CancellationToken caller, string? renderId = null)
+    {
+        var call = new CallTrace(op, Interlocked.Increment(ref inflight) - 1, views);
+        try
+        {
+            var result = await Bounded(call, action, options, caller, renderId).ConfigureAwait(false);
+            reporter?.Record(call, null);
+            return result;
+        }
+        catch (Exception error)
+        {
+            reporter?.Record(call, error);
+            throw;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref inflight);
+        }
+    }
+
+    private async Task<T> Bounded<T>(CallTrace call, Func<Operation, Task<T>> action, RenderOptions? options,
+        CancellationToken caller, string? renderId)
     {
         var budget = options?.Timeout ?? timeout;
         ValidateTimeout(budget);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller);
         deadline.CancelAfter(budget);
-        var operation = new Operation(deadline.Token) { RenderId = renderId };
+        var operation = new Operation(deadline.Token, call) { RenderId = renderId };
         try
         {
             deadline.Token.ThrowIfCancellationRequested();
@@ -157,7 +189,10 @@ public sealed class RenderClient : IDisposable
             operation.Token.ThrowIfCancellationRequested();
             if (state.Status == RenderStatus.Completed) return state.Images!;
             if (state.Status == RenderStatus.Failed) throw new RenderException(state.Error!.Code, state.Error.Detail);
-            await Task.Delay(delay, operation.Token).ConfigureAwait(false);
+            var waited = operation.Call.Now;
+            try { await Task.Delay(delay, operation.Token).ConfigureAwait(false); }
+            finally { operation.Call.PollWaitMs += operation.Call.Now - waited; }
+            operation.Call.Polls++;
             state = await Get(state.Id, operation).ConfigureAwait(false);
             delay = TimeSpan.FromMilliseconds(Math.Min(2000, delay.TotalMilliseconds * 1.5));
         }
@@ -177,32 +212,51 @@ public sealed class RenderClient : IDisposable
                 request.Headers.Add("Idempotency-Key", operation.Key);
             }
             if (prefer is not null) request.Headers.TryAddWithoutValidation("Prefer", prefer);
+            request.Headers.TryAddWithoutValidation("traceparent", operation.Call.Traceparent());
+            var started = operation.Call.Now;
+            var attempted = false;
             try
             {
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, operation.Token).ConfigureAwait(false);
+                operation.Call.Headers(response, started);
                 if (response.Headers.TryGetValues("X-Request-Id", out var values)) operation.RequestId = values.FirstOrDefault();
                 if ((int)response.StatusCode is 429 or 502 or 503 or 504 && attempt < 3)
                 {
-                    await Task.Delay(RetryDelay(attempt, response.Headers.RetryAfter), operation.Token).ConfigureAwait(false);
+                    operation.Call.Attempt(started);
+                    attempted = true;
+                    await Backoff(operation, RetryDelay(attempt, response.Headers.RetryAfter)).ConfigureAwait(false);
                     continue;
                 }
-                var payload = await ReadBody(response, operation.Token).ConfigureAwait(false);
+                byte[] payload;
+                try { payload = await ReadBody(response, operation.Token).ConfigureAwait(false); }
+                finally { operation.Call.Attempt(started); attempted = true; }
                 var state = Parse(response.StatusCode, payload);
                 operation.RenderId ??= state.Id;
+                operation.Call.RenderId = operation.RenderId;
                 operation.RequestId = state.RequestId;
                 return state;
             }
             catch (HttpRequestException error)
             {
+                if (!attempted) operation.Call.Attempt(started);
                 if (attempt == 3) throw new RenderException("network_error", "Could not complete the HTTP request", inner: error);
-                await Task.Delay(RetryDelay(attempt, null), operation.Token).ConfigureAwait(false);
+                await Backoff(operation, RetryDelay(attempt, null)).ConfigureAwait(false);
             }
             catch (IOException error)
             {
+                if (!attempted) operation.Call.Attempt(started);
                 if (attempt == 3) throw new RenderException("network_error", "Could not read the HTTP response", inner: error);
-                await Task.Delay(RetryDelay(attempt, null), operation.Token).ConfigureAwait(false);
+                await Backoff(operation, RetryDelay(attempt, null)).ConfigureAwait(false);
             }
         }
+    }
+
+    private static async Task Backoff(Operation operation, TimeSpan delay)
+    {
+        operation.Call.Retries++;
+        var started = operation.Call.Now;
+        try { await Task.Delay(delay, operation.Token).ConfigureAwait(false); }
+        finally { operation.Call.BackoffMs += operation.Call.Now - started; }
     }
 
     private static TimeSpan RetryDelay(int attempt, RetryConditionHeaderValue? retryAfter)
@@ -319,5 +373,15 @@ public sealed class RenderClient : IDisposable
     }
 
     private static RenderException InvalidResponse(string detail) => new("invalid_response", detail);
-    public void Dispose() => http.Dispose();
+    // Sends buffered call timings, waiting at most two seconds, then releases the connection pool.
+    public void Dispose()
+    {
+        if (reporter is not null)
+        {
+            try { reporter.FlushAsync(CancellationToken.None).Wait(TimeSpan.FromSeconds(2)); }
+            catch (Exception) { }
+            reporter.Dispose();
+        }
+        http.Dispose();
+    }
 }

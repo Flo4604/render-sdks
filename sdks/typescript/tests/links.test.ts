@@ -1,12 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { RenderClient, RenderError } from "../src/client.js";
+import { Call } from "../src/telemetry.js";
 
 const id = "rnd_01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const image = "https://img.medalbot.cc/v1/example.webp";
 const link =
   "https://img.medalbot.cc/r/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-const config = { baseUrl: "https://render.medalbot.cc", apiKey: "fixture" };
+const config = {
+  baseUrl: "https://render.medalbot.cc",
+  apiKey: "fixture",
+  telemetry: false,
+} as const;
 const envelope = (data: unknown) => ({
   meta: { requestId: "req_fixture", region: "future" },
   data,
@@ -130,10 +135,16 @@ test("the links preference composes with the wait preference", async () => {
         input: unknown,
         options: unknown,
         wait: boolean,
+        call: Call,
       ) => Promise<unknown>;
     }
   ).submit.bind(client);
-  await submit({ inspectUrl: "fixture" }, { links: true }, true);
+  await submit(
+    { inspectUrl: "fixture" },
+    { links: true },
+    true,
+    new Call("create", 0),
+  );
   assert.deepEqual(prefers, ["wait=10, links"]);
 });
 

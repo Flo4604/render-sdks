@@ -1,5 +1,16 @@
 # Changes
 
+## Identification and telemetry
+
+| SDK | Version |
+| --- | --- |
+| TypeScript | unreleased |
+| Python | unreleased |
+| Go | unreleased |
+| C# | unreleased |
+
+Every request sends `User-Agent: medalbot-render-<language>/<version> (<runtime>/<version>; <os>)`, `X-Medalbot-SDK: <language>/<version>` and a W3C `traceparent` whose trace ID is fixed for one call. Unless the caller turns it off, each call reports its timings to `POST /v1/telemetry/sdk` with the caller's key: total time, HTTP time, time to first byte, the API's `Server-Timing`, retries and backoff, polls and the wait between them, the error code and the server request ID. Python and Go add connect time; Go also adds DNS and TLS time. Reports are sampled (a quarter of fast, successful calls; every failed call and every call of three seconds or more), batched, and dropped on failure. Turn it off with the client option (`telemetry: false`, `telemetry=False`, `DisableTelemetry: true`, `Telemetry = false`) or `MEDALBOT_TELEMETRY=0`.
+
 ## Render links
 
 | SDK | Version |

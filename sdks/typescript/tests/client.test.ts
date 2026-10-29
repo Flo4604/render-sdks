@@ -17,7 +17,11 @@ const queued = {
   id,
   status: "queued",
 };
-const config = { baseUrl: "https://render.medalbot.cc", apiKey: "fixture" };
+const config = {
+  baseUrl: "https://render.medalbot.cc",
+  apiKey: "fixture",
+  telemetry: false,
+} as const;
 
 test("StatTrak serializes explicit zero and omits an unspecified counter", async () => {
   for (const statTrak of [undefined, 0, 1337, 999999]) {

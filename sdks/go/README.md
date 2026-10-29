@@ -44,6 +44,23 @@ images, err := client.Render(ctx, render.RenderRequest{
 
 `Config.Timeout` defaults to 120 seconds and covers submission, retries, and polling together. A shorter context deadline takes precedence. Canceling the context stops the local wait and leaves shared GPU work running. Polls start at 500 milliseconds and increase to a maximum of 2 seconds.
 
+## Telemetry
+
+The client reports how long each call took on your side, so slow renders can be traced to DNS, connecting, the network, polling, retries or the calling process. Turn it off when you create the client:
+
+```go
+client, err := render.NewClient(render.Config{
+    APIKey:           os.Getenv("RENDER_API_KEY"),
+    DisableTelemetry: true,
+})
+```
+
+`TelemetrySampleRate: 0.1` keeps it on and reports a tenth of fast, successful calls; zero means the default, a quarter. Failed calls and calls of three seconds or more are always reported. Setting `MEDALBOT_TELEMETRY=0` in the environment turns it off for every client in the process.
+
+Each report covers one call: time to first byte, total time, the API's own `Server-Timing`, retries and their backoff, polls and the time between them, the error code, and the server's request ID, plus DNS, connect and TLS time for new connections. It never contains your inspect link, API key or image URLs. Reports go to `POST /v1/telemetry/sdk` on the same API with your key, in batches every ten seconds, and a failed report is dropped without affecting the call. A program that exits right after its last render can call `client.FlushTelemetry(ctx)` first.
+
+Every request also names the SDK in `User-Agent` and `X-Medalbot-SDK` and carries a W3C `traceparent`, whether telemetry is on or off, so a support request can quote one call's trace.
+
 Omit `Appearance` or use `render.AppearanceDefault` to preserve the original lighting. Use `render.AppearancePattern` for the optional pattern lighting:
 
 ```go

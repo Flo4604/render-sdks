@@ -15,6 +15,12 @@ type Config struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Timeout    time.Duration
+	// DisableTelemetry stops the call timings this client sends to the API. The
+	// MEDALBOT_TELEMETRY=0 environment variable does the same for every client.
+	DisableTelemetry bool
+	// TelemetrySampleRate is the share of fast, successful calls reported; zero means 0.25.
+	// Failed calls and calls of three seconds or more are always reported.
+	TelemetrySampleRate float64
 }
 
 type View string

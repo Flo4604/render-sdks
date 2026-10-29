@@ -21,6 +21,20 @@ Console.WriteLine(images.Back);
 
 Omit `Views` to request preview, front, and back. Images use lossless WebP by default. Set `Format = ImageFormat.Png` for PNG. Unrequested image properties are null. Reuse one client for concurrent requests, then dispose it when the application shuts down.
 
+## Telemetry
+
+The client reports how long each call took on your side, so slow renders can be traced to the network, polling, retries or the calling process. Turn it off when you create the client:
+
+```csharp
+using var client = new RenderClient(apiKey, new RenderClientOptions { Telemetry = false });
+```
+
+`TelemetrySampleRate = 0.1` keeps it on and reports a tenth of fast, successful calls; the default is a quarter. Failed calls and calls of three seconds or more are always reported. Setting `MEDALBOT_TELEMETRY=0` in the environment turns it off for every client in the process.
+
+Each report covers one call: time to first byte, total time, the API's own `Server-Timing`, retries and their backoff, polls and the time between them, the error code, and the server's request ID. It never contains your inspect link, API key or image URLs. Reports go to `POST /v1/telemetry/sdk` on the same API with your key, in batches every ten seconds and when the client is disposed, and a failed report is dropped without affecting the call. `await client.FlushTelemetryAsync()` sends them at once.
+
+Every request also names the SDK in `User-Agent` and `X-Medalbot-SDK` and carries a W3C `traceparent`, whether telemetry is on or off, so a support request can quote one call's trace.
+
 For a StatTrak weapon, use `new RenderRequest { InspectUrl = inspectUrl, StatTrak = 1337 }` to override the kill counter in the image. The integer range is 0 to 999999; zero is an explicit override. Leave `StatTrak` null to preserve the inspected counter. This only changes the render, never the Steam item. A weapon without StatTrak returns `stat_trak_unavailable`.
 
 Leave `Appearance` null to keep the original lighting, or set `RenderAppearance.Default` explicitly. To request pattern lighting:

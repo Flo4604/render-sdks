@@ -19,6 +19,20 @@ console.log(images.back);
 
 The default API URL is `https://render.medalbot.cc`. Supply `baseUrl` for local development. The package includes its public protocol types and has no private workspace dependencies.
 
+## Telemetry
+
+The client reports how long each call took on your side, so slow renders can be traced to the network, polling, retries or the calling process. Turn it off when you create the client:
+
+```ts
+const client = new RenderClient({ apiKey, telemetry: false });
+```
+
+`telemetry: { sampleRate: 0.1 }` keeps it on and reports a tenth of fast, successful calls; the default is a quarter. Failed calls and calls of three seconds or more are always reported. Setting `MEDALBOT_TELEMETRY=0` in the environment turns it off for every client in the process.
+
+Each report covers one call: time to first byte, total time, the API's own `Server-Timing`, retries and their backoff, polls and the time between them, the error code, and the server's request ID. It never contains your inspect link, API key or image URLs. Reports go to `POST /v1/telemetry/sdk` on the same API with your key, in batches every ten seconds, and a failed report is dropped without affecting the call. Serverless handlers can `await client.flushTelemetry()` before they return.
+
+Every request also names the SDK in `User-Agent` and `X-Medalbot-SDK` and carries a W3C `traceparent`, whether telemetry is on or off, so a support request can quote one call's trace.
+
 For a StatTrak weapon, `await client.render({ inspectUrl, statTrak: 1337 })` overrides the kill counter in the image. The integer range is 0 to 999999; zero is an explicit override. Omit `statTrak` to preserve the inspected counter. This only changes the render, never the Steam item. A weapon without StatTrak returns `stat_trak_unavailable`.
 
 ## Render appearance
