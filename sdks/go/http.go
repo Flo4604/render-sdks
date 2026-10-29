@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"time"
@@ -16,16 +17,45 @@ import (
 const maxResponseBytes = 1 << 20
 
 func (c *Client) request(ctx context.Context, method, path string, body []byte, headers http.Header) (*Render, error) {
+	current := callFrom(ctx)
+	if current == nil {
+		current = &call{traceID: randomHex(16), started: time.Now()}
+	}
+	result, err := c.attempts(ctx, method, path, body, headers, current)
+	if err == nil {
+		current.mu.Lock()
+		current.renderID = result.ID
+		current.mu.Unlock()
+	}
+	return result, err
+}
+
+// backoff sleeps before a retry and counts it on the call.
+func (c *Client) backoff(ctx context.Context, current *call, delay time.Duration) error {
+	started := time.Now()
+	err := c.sleep(ctx, delay)
+	current.mu.Lock()
+	current.retries++
+	current.backoffMs += milliseconds(time.Since(started))
+	current.mu.Unlock()
+	return err
+}
+
+func (c *Client) attempts(ctx context.Context, method, path string, body []byte, headers http.Header, current *call) (*Render, error) {
 	for attempt := 0; attempt < 4; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, contextError(err)
 		}
-		request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(body))
+		started := time.Now()
+		request, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, current.clientTrace(started)), method, c.baseURL+path, bytes.NewReader(body))
 		if err != nil {
 			return nil, invalidInput("Cannot build request URL")
 		}
 		request.Header.Set("Authorization", "Bearer "+c.apiKey)
 		request.Header.Set("Accept", "application/json")
+		request.Header.Set("User-Agent", userAgent)
+		request.Header.Set("X-Medalbot-SDK", sdkHeader)
+		request.Header.Set("Traceparent", current.traceparent())
 		if body != nil {
 			request.Header.Set("Content-Type", "application/json")
 		}
@@ -34,20 +64,22 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte, 
 		}
 		response, err := c.http.Do(request)
 		if err != nil {
+			current.failure(started)
 			if ctx.Err() != nil {
 				return nil, contextError(ctx.Err())
 			}
 			if attempt == 3 {
 				return nil, &Error{Code: "network_error", Detail: "Could not complete the HTTP request", cause: err}
 			}
-			if err := c.sleep(ctx, retryDelay(attempt, "", time.Now())); err != nil {
+			if err := c.backoff(ctx, current, retryDelay(attempt, "", time.Now())); err != nil {
 				return nil, contextError(err)
 			}
 			continue
 		}
 		if retryable(response.StatusCode) && attempt < 3 {
 			response.Body.Close()
-			if err := c.sleep(ctx, retryDelay(attempt, response.Header.Get("Retry-After"), time.Now())); err != nil {
+			current.response(response, started)
+			if err := c.backoff(ctx, current, retryDelay(attempt, response.Header.Get("Retry-After"), time.Now())); err != nil {
 				failure := contextError(err)
 				failure.RequestID = response.Header.Get("X-Request-Id")
 				return nil, failure
@@ -56,6 +88,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte, 
 		}
 		payload, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 		response.Body.Close()
+		current.response(response, started)
 		if ctx.Err() != nil {
 			failure := contextError(ctx.Err())
 			failure.RequestID = response.Header.Get("X-Request-Id")
@@ -63,7 +96,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte, 
 		}
 		if readErr != nil {
 			if attempt < 3 {
-				if err := c.sleep(ctx, retryDelay(attempt, "", time.Now())); err != nil {
+				if err := c.backoff(ctx, current, retryDelay(attempt, "", time.Now())); err != nil {
 					return nil, contextError(err)
 				}
 				continue

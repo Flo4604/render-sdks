@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,11 +19,14 @@ var renderIDPattern = regexp.MustCompile(`^rnd_(?:[0-7][0-9A-HJKMNP-TV-Z]{25}|[a
 
 // Client is safe for concurrent use. It never cancels shared work on the server.
 type Client struct {
-	baseURL string
-	apiKey  string
-	http    *http.Client
-	timeout time.Duration
-	sleep   func(context.Context, time.Duration) error
+	baseURL  string
+	apiKey   string
+	http     *http.Client
+	timeout  time.Duration
+	sleep    func(context.Context, time.Duration) error
+	reporter *reporter
+	mu       sync.Mutex
+	inflight int
 }
 
 func NewClient(config Config) (*Client, error) {
@@ -49,25 +53,29 @@ func NewClient(config Config) (*Client, error) {
 	copied := *transport
 	// A render API never needs redirects; do not forward credentials to another host.
 	copied.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{strings.TrimRight(config.BaseURL, "/"), config.APIKey, &copied, config.Timeout, sleep}, nil
+	client := &Client{baseURL: strings.TrimRight(config.BaseURL, "/"), apiKey: config.APIKey, http: &copied, timeout: config.Timeout, sleep: sleep}
+	client.reporter = newReporter(client, config)
+	return client, nil
 }
 
 // Render returns finished images whether the request is cached or needs GPU work.
 // The operation timeout covers submission, retries, and polling together.
-func (c *Client) Render(ctx context.Context, input RenderRequest, options ...SubmitOptions) (Images, error) {
+func (c *Client) Render(ctx context.Context, input RenderRequest, options ...SubmitOptions) (images Images, err error) {
+	views := input.Views
+	if len(views) == 0 {
+		views = []View{Preview, Front, Back}
+	}
+	ctx, done := c.observe(ctx, "render", len(views))
+	defer func() { done(err) }()
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	result, key, err := c.submit(ctx, input, true, options)
 	if err != nil {
 		return nil, enrich(err, "", key)
 	}
-	images, err := c.poll(ctx, result)
+	images, err = c.poll(ctx, result)
 	if err != nil {
 		return nil, enrich(err, result.ID, key)
-	}
-	views := input.Views
-	if len(views) == 0 {
-		views = []View{Preview, Front, Back}
 	}
 	for _, view := range views {
 		if _, ok := images[view]; !ok {
@@ -80,34 +88,40 @@ func (c *Client) Render(ctx context.Context, input RenderRequest, options ...Sub
 }
 
 // Create submits a render without waiting for it to finish.
-func (c *Client) Create(ctx context.Context, input RenderRequest, options ...SubmitOptions) (*Render, error) {
+func (c *Client) Create(ctx context.Context, input RenderRequest, options ...SubmitOptions) (render *Render, err error) {
+	ctx, done := c.observe(ctx, "create", 0)
+	defer func() { done(err) }()
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	result, key, err := c.submit(ctx, input, false, options)
-	return result, enrich(err, "", key)
+	render, key, err := c.submit(ctx, input, false, options)
+	return render, enrich(err, "", key)
 }
 
 // Get retrieves the current render state.
-func (c *Client) Get(ctx context.Context, id string, options ...GetOptions) (*Render, error) {
+func (c *Client) Get(ctx context.Context, id string, options ...GetOptions) (render *Render, err error) {
+	ctx, done := c.observe(ctx, "get", 0)
+	defer func() { done(err) }()
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	if len(options) > 1 {
 		return nil, enrich(invalidInput("Provide at most one GetOptions value"), id, "")
 	}
 	links := len(options) == 1 && options[0].Links
-	result, err := c.getWith(ctx, id, links)
-	return result, enrich(err, id, "")
+	render, err = c.getWith(ctx, id, links)
+	return render, enrich(err, id, "")
 }
 
 // Wait resumes a render and returns its images when complete.
-func (c *Client) Wait(ctx context.Context, id string) (Images, error) {
+func (c *Client) Wait(ctx context.Context, id string) (images Images, err error) {
+	ctx, done := c.observe(ctx, "wait", 0)
+	defer func() { done(err) }()
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	result, err := c.get(ctx, id)
 	if err != nil {
 		return nil, enrich(err, id, "")
 	}
-	images, err := c.poll(ctx, result)
+	images, err = c.poll(ctx, result)
 	return images, enrich(err, id, "")
 }
 
@@ -168,6 +182,7 @@ func (c *Client) getWith(ctx context.Context, id string, links bool) (*Render, e
 
 func (c *Client) poll(ctx context.Context, result *Render) (Images, error) {
 	interval := 500 * time.Millisecond
+	current := callFrom(ctx)
 	for {
 		if err := ctx.Err(); err != nil {
 			failure := contextError(err)
@@ -180,10 +195,20 @@ func (c *Client) poll(ctx context.Context, result *Render) (Images, error) {
 		case "failed":
 			return nil, &Error{Code: result.Error.Code, Detail: result.Error.Detail, RenderID: result.ID, RequestID: result.RequestID}
 		}
-		if err := c.sleep(ctx, interval); err != nil {
+		waited := time.Now()
+		err := c.sleep(ctx, interval)
+		if current != nil {
+			current.add(&current.pollWaitMs, time.Since(waited))
+		}
+		if err != nil {
 			failure := contextError(err)
 			failure.RequestID = result.RequestID
 			return nil, failure
+		}
+		if current != nil {
+			current.mu.Lock()
+			current.polls++
+			current.mu.Unlock()
 		}
 		next, err := c.get(ctx, result.ID)
 		if err != nil {

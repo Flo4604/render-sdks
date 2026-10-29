@@ -4,6 +4,7 @@ import asyncio
 import math
 import random
 import re
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from .models import (
     RenderResponse,
     View,
 )
+from .telemetry import DEFAULT_SAMPLE_RATE, IDENTITY, Call, Reporter, sample_rate
 
 T = TypeVar("T")
 _VIEWS: tuple[View, ...] = ("preview", "front", "back")
@@ -125,12 +127,20 @@ class RenderClient:
         api_key: str,
         base_url: str = "https://render.medalbot.cc",
         transport: httpx.AsyncBaseTransport | None = None,
+        telemetry: bool = True,
+        telemetry_sample_rate: float = DEFAULT_SAMPLE_RATE,
     ) -> None:
+        """``telemetry=False`` stops the call timings this client sends to the API.
+
+        ``telemetry_sample_rate`` is the share of fast, successful calls reported; failed
+        calls and calls of three seconds or more are always reported.
+        """
         if not api_key.strip():
             raise ValueError("api_key must not be empty")
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={
+                **IDENTITY,
                 "Authorization": f"Bearer {api_key}",
                 "Accept": "application/json",
             },
@@ -138,6 +148,9 @@ class RenderClient:
             timeout=httpx.Timeout(30, connect=10),
             follow_redirects=False,
         )
+        rate = sample_rate(telemetry, telemetry_sample_rate)
+        self._reporter = None if rate is None else Reporter(self._http, rate)
+        self._inflight = 0
         self.renders = Renders(self)
 
     async def __aenter__(self) -> Self:
@@ -152,7 +165,43 @@ class RenderClient:
         await self.aclose()
 
     async def aclose(self) -> None:
+        """Send buffered call timings, for at most two seconds, then close the pool."""
+        if self._reporter is not None:
+            await self._reporter.flush(timeout=2)
         await self._http.aclose()
+
+    async def flush_telemetry(self) -> None:
+        """Send buffered call timings now."""
+        if self._reporter is not None:
+            await self._reporter.flush()
+
+    async def _observe(
+        self,
+        op: str,
+        run: Callable[[Call], Awaitable[T]],
+        views: int | None = None,
+    ) -> T:
+        call = Call(op, self._inflight, views)
+        self._inflight += 1
+        try:
+            result = await run(call)
+        except BaseException as error:
+            if self._reporter is not None:
+                self._reporter.record(call, error)
+            raise
+        finally:
+            self._inflight -= 1
+        if self._reporter is not None:
+            self._reporter.record(call, None)
+        return result
+
+    async def _backoff(self, call: Call, seconds: float) -> None:
+        call.retries += 1
+        started = time.perf_counter()
+        try:
+            await asyncio.sleep(seconds)
+        finally:
+            call.backoff_ms += (time.perf_counter() - started) * 1000
 
     async def _bounded(
         self,
@@ -189,6 +238,7 @@ class RenderClient:
         method: str,
         path: str,
         context: _Context,
+        call: Call,
         *,
         body: dict[str, object] | None = None,
         wait: bool = False,
@@ -201,22 +251,29 @@ class RenderClient:
         if preferences:
             headers["Prefer"] = ", ".join(preferences)
         for attempt in range(4):
+            started = time.perf_counter()
             try:
                 response = await self._http.request(
-                    method, path, json=body, headers=headers
+                    method,
+                    path,
+                    json=body,
+                    headers={**headers, "traceparent": call.traceparent()},
+                    extensions={"trace": call.trace_hook(started)},
                 )
             except httpx.TransportError:
+                call.failure(started)
                 if attempt == 3:
                     raise RenderError(
                         "transport_error", "API connection failed after four attempts"
                     ) from None
-                await asyncio.sleep(_retry_delay(None, attempt))
+                await self._backoff(call, _retry_delay(None, attempt))
                 continue
+            call.response(response, started)
             context.request_id = (
                 response.headers.get("x-request-id") or context.request_id
             )
             if response.status_code in (429, 502, 503, 504) and attempt < 3:
-                await asyncio.sleep(_retry_delay(response, attempt))
+                await self._backoff(call, _retry_delay(response, attempt))
                 continue
             try:
                 value = response.json()
@@ -248,18 +305,21 @@ class RenderClient:
                     "invalid_response", "API returned an invalid render response"
                 ) from None
             context.render_id = result.id
+            call.render_id = result.id
             return result
         raise AssertionError("Unreachable retry state")
 
     async def _poll(
         self,
         context: _Context,
+        call: Call,
         expected: tuple[View, ...] | None,
         initial: Render | None = None,
     ) -> Images:
         assert context.render_id is not None
+        call.render_id = context.render_id
         result = initial or await self._request(
-            "GET", f"/v1/renders/{context.render_id}", context
+            "GET", f"/v1/renders/{context.render_id}", context, call
         )
         interval = 0.5
         while True:
@@ -272,9 +332,14 @@ class RenderClient:
                             "invalid_response", f"Completed render is missing {view}"
                         )
                 return result.images
-            await asyncio.sleep(interval)
+            waited = time.perf_counter()
+            try:
+                await asyncio.sleep(interval)
+            finally:
+                call.poll_wait_ms += (time.perf_counter() - waited) * 1000
+            call.polls += 1
             result = await self._request(
-                "GET", f"/v1/renders/{context.render_id}", context
+                "GET", f"/v1/renders/{context.render_id}", context, call
             )
             interval = min(2.0, interval * 1.5)
 
@@ -294,13 +359,17 @@ class RenderClient:
             inspect_url, views, format, idempotency_key, stat_trak, appearance
         )
 
-        async def run() -> Images:
+        async def run(call: Call) -> Images:
             result = await self._request(
-                "POST", "/v1/renders", context, body=body, wait=True
+                "POST", "/v1/renders", context, call, body=body, wait=True
             )
-            return await self._poll(context, requested, result)
+            return await self._poll(context, call, requested, result)
 
-        return await self._bounded(run, timeout, context)
+        return await self._observe(
+            "render",
+            lambda call: self._bounded(lambda: run(call), timeout, context),
+            len(requested),
+        )
 
 
 class Renders:
@@ -328,12 +397,15 @@ class Renders:
         body, context, _ = _submission(
             inspect_url, views, format, idempotency_key, stat_trak, appearance
         )
-        return await self._client._bounded(
-            lambda: self._client._request(
-                "POST", "/v1/renders", context, body=body, links=links
+        return await self._client._observe(
+            "create",
+            lambda call: self._client._bounded(
+                lambda: self._client._request(
+                    "POST", "/v1/renders", context, call, body=body, links=links
+                ),
+                timeout,
+                context,
             ),
-            timeout,
-            context,
         )
 
     async def get(
@@ -342,12 +414,15 @@ class Renders:
         """Read the current state. ``links=True`` sends ``Prefer: links``."""
         _validate_id(render_id)
         context = _Context(render_id=render_id)
-        return await self._client._bounded(
-            lambda: self._client._request(
-                "GET", f"/v1/renders/{render_id}", context, links=links
+        return await self._client._observe(
+            "get",
+            lambda call: self._client._bounded(
+                lambda: self._client._request(
+                    "GET", f"/v1/renders/{render_id}", context, call, links=links
+                ),
+                timeout,
+                context,
             ),
-            timeout,
-            context,
         )
 
     async def wait(
@@ -360,6 +435,9 @@ class Renders:
         _validate_id(render_id)
         context = _Context(render_id=render_id)
         expected = _views(views) if views is not None else None
-        return await self._client._bounded(
-            lambda: self._client._poll(context, expected), timeout, context
+        return await self._client._observe(
+            "wait",
+            lambda call: self._client._bounded(
+                lambda: self._client._poll(context, call, expected), timeout, context
+            ),
         )

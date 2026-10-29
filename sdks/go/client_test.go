@@ -40,7 +40,7 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client, err := NewClient(Config{APIKey: "test-key", BaseURL: server.URL})
+	client, err := NewClient(Config{APIKey: "test-key", BaseURL: server.URL, DisableTelemetry: true})
 	if err != nil {
 		t.Fatal(err)
 	}

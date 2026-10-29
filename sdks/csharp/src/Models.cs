@@ -41,6 +41,12 @@ public sealed record RenderClientOptions
 {
     public Uri BaseUrl { get; init; } = new("https://render.medalbot.cc");
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(2);
+    // Call timings sent to the API. False turns them off; MEDALBOT_TELEMETRY=0 does the same
+    // for every client in the process.
+    public bool Telemetry { get; init; } = true;
+    // The share of fast, successful calls reported. Failed calls and calls of three seconds or
+    // more are always reported.
+    public double TelemetrySampleRate { get; init; } = 0.25;
 }
 
 public sealed record RenderOptions
