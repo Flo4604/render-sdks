@@ -27,6 +27,27 @@ export class RenderError extends Error {
     super(detail);
   }
 }
+// The render's retention ended or it was deleted, so the API no longer has its images.
+// Retrying never succeeds; submit again with a new idempotency key to render it again.
+export class RenderExpiredError extends RenderError {
+  constructor(
+    detail: string,
+    renderId?: string,
+    requestId?: string,
+    idempotencyKey?: string,
+  ) {
+    super("render_expired", detail, renderId, requestId, idempotencyKey);
+  }
+}
+const renderError = (
+  code: string,
+  detail: string,
+  renderId?: string,
+  requestId?: string,
+) =>
+  code === "render_expired"
+    ? new RenderExpiredError(detail, renderId, requestId)
+    : new RenderError(code, detail, renderId, requestId);
 export type WaitOptions = { signal?: AbortSignal; timeoutMs?: number };
 export type RenderOptions = WaitOptions & { idempotencyKey?: string };
 // `links: true` sends `Prefer: links`, so pending and completed render data carry a
@@ -101,6 +122,20 @@ export class RenderClient {
         this.observe("get", (call) =>
           this.get(id, options.links, options.signal, call),
         ),
+      // Ends the render's retention now, after you saved its images. Later reads throw
+      // RenderExpiredError. Deleting a deleted render succeeds again.
+      delete: (id: string, options: Pick<WaitOptions, "signal"> = {}) =>
+        this.observe("delete", async (call) => {
+          call.renderId = id;
+          await this.request(
+            `/v1/renders/${RenderId.parse(id)}`,
+            {
+              method: "DELETE",
+              ...(options.signal ? { signal: options.signal } : {}),
+            },
+            call,
+          );
+        }),
       wait: (id: string, options: WaitOptions = {}) =>
         this.observe("wait", (call) => this.wait(id, options, call)),
       batch: (
@@ -277,7 +312,7 @@ export class RenderClient {
             }),
           })
           .safeParse(body);
-        throw new RenderError(
+        throw renderError(
           parsed.success
             ? (parsed.data.error.code ??
                 parsed.data.error.type ??
@@ -339,7 +374,7 @@ export class RenderClient {
       signal.throwIfAborted();
       if ("images" in result) return result.images;
       if (result.status === "failed")
-        throw new RenderError(result.error.code, result.error.detail, id);
+        throw renderError(result.error.code, result.error.detail, id);
       const waited = performance.now();
       try {
         await sleep(interval, signal);

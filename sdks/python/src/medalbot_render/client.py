@@ -9,8 +9,9 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from enum import Enum
 from types import TracebackType
-from typing import Self, TypeVar
+from typing import Literal, Self, TypeVar
 from uuid import uuid4
 
 import httpx
@@ -26,12 +27,22 @@ from .models import (
     RenderError,
     RenderResponse,
     View,
+    render_error,
 )
 from .telemetry import DEFAULT_SAMPLE_RATE, IDENTITY, Call, Reporter, sample_rate
 
 T = TypeVar("T")
 _VIEWS: tuple[View, ...] = ("preview", "front", "back")
 _RENDER_ID = re.compile(r"rnd_(?:[0-7][0-9A-HJKMNP-TV-Z]{25}|[a-f0-9]{32})\Z")
+
+
+class _KeyDefault(Enum):
+    KEY_DEFAULT = "key_default"
+
+
+# Omitting ``retention_seconds`` sends nothing, so the API key's default applies.
+_KEY_DEFAULT: Literal[_KeyDefault.KEY_DEFAULT] = _KeyDefault.KEY_DEFAULT
+Retention = int | None | Literal[_KeyDefault.KEY_DEFAULT]
 
 
 @dataclass
@@ -44,6 +55,12 @@ class _Context:
 def _validate_id(render_id: str) -> None:
     if not _RENDER_ID.fullmatch(render_id):
         raise ValueError("render_id must be a prefixed ULID or an existing render ID")
+
+
+def _retention_valid(value: object) -> bool:
+    if value is None or isinstance(value, _KeyDefault):
+        return True
+    return type(value) is int and 3600 <= value <= 2592000
 
 
 def _views(views: Sequence[View] | None) -> tuple[View, ...]:
@@ -62,6 +79,7 @@ def _submission(
     idempotency_key: str | None,
     stat_trak: int | None,
     appearance: Appearance | None,
+    retention_seconds: Retention,
 ) -> tuple[dict[str, object], _Context, tuple[View, ...]]:
     if not isinstance(inspect_url, str) or not 1 <= len(inspect_url) <= 32768:
         raise ValueError("inspect_url must contain 1 to 32768 characters")
@@ -74,6 +92,10 @@ def _submission(
         type(stat_trak) is not int or not 0 <= stat_trak <= 999999
     ):
         raise ValueError("stat_trak must be an integer from 0 to 999999")
+    if not _retention_valid(retention_seconds):
+        raise ValueError(
+            "retention_seconds must be an integer from 3600 to 2592000, or None"
+        )
     key = str(uuid4()) if idempotency_key is None else idempotency_key
     if not re.fullmatch(r"[\x21-\x7e]{1,128}", key):
         raise ValueError(
@@ -86,6 +108,8 @@ def _submission(
         body["statTrak"] = stat_trak
     if appearance is not None:
         body["appearance"] = appearance
+    if not isinstance(retention_seconds, _KeyDefault):
+        body["retentionSeconds"] = retention_seconds
     return (
         body,
         _Context(idempotency_key=key),
@@ -244,6 +268,34 @@ class RenderClient:
         wait: bool = False,
         links: bool = False,
     ) -> Render:
+        value = await self._send(
+            method, path, context, call, body=body, wait=wait, links=links
+        )
+        try:
+            envelope = RenderResponse.model_validate(value)
+            context.request_id = envelope.meta.request_id
+            result = envelope.data
+            if context.render_id and result.id != context.render_id:
+                raise ValueError("Response render ID changed")
+        except (ValidationError, ValueError):
+            raise RenderError(
+                "invalid_response", "API returned an invalid render response"
+            ) from None
+        context.render_id = result.id
+        call.render_id = result.id
+        return result
+
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        context: _Context,
+        call: Call,
+        *,
+        body: dict[str, object] | None = None,
+        wait: bool = False,
+        links: bool = False,
+    ) -> object:
         headers = {}
         if context.idempotency_key and method == "POST":
             headers["Idempotency-Key"] = context.idempotency_key
@@ -286,7 +338,7 @@ class RenderClient:
             if not response.is_success:
                 nested = data.get("error")
                 error = nested if isinstance(nested, dict) else {}
-                raise RenderError(
+                raise render_error(
                     _text(error.get("code")) or f"http_{response.status_code}",
                     _text(error.get("detail"))
                     or _text(error.get("message"))
@@ -294,19 +346,7 @@ class RenderClient:
                     request_id=context.request_id,
                     status_code=response.status_code,
                 )
-            try:
-                envelope = RenderResponse.model_validate(value)
-                context.request_id = envelope.meta.request_id
-                result = envelope.data
-                if context.render_id and result.id != context.render_id:
-                    raise ValueError("Response render ID changed")
-            except (ValidationError, ValueError):
-                raise RenderError(
-                    "invalid_response", "API returned an invalid render response"
-                ) from None
-            context.render_id = result.id
-            call.render_id = result.id
-            return result
+            return value
         raise AssertionError("Unreachable retry state")
 
     async def _poll(
@@ -324,7 +364,7 @@ class RenderClient:
         interval = 0.5
         while True:
             if isinstance(result, FailedRender):
-                raise RenderError(result.error.code, result.error.detail)
+                raise render_error(result.error.code, result.error.detail)
             if isinstance(result, CompletedRender):
                 for view in expected or ():
                     if view not in result.images:
@@ -351,12 +391,23 @@ class RenderClient:
         format: Format = "webp",
         stat_trak: int | None = None,
         appearance: Appearance | None = None,
+        retention_seconds: Retention = _KEY_DEFAULT,
         timeout: float = 120,
         idempotency_key: str | None = None,
     ) -> Images:
-        """Return finished images, including cached results, within one total deadline."""
+        """Return finished images, including cached results, within one total deadline.
+
+        ``retention_seconds`` keeps the images for 3600 to 2592000 seconds. Omit it for
+        the API key's default; ``None`` keeps them forever even when the key has one.
+        """
         body, context, requested = _submission(
-            inspect_url, views, format, idempotency_key, stat_trak, appearance
+            inspect_url,
+            views,
+            format,
+            idempotency_key,
+            stat_trak,
+            appearance,
+            retention_seconds,
         )
 
         async def run(call: Call) -> Images:
@@ -386,6 +437,7 @@ class Renders:
         format: Format = "webp",
         stat_trak: int | None = None,
         appearance: Appearance | None = None,
+        retention_seconds: Retention = _KEY_DEFAULT,
         timeout: float = 120,
         idempotency_key: str | None = None,
         links: bool = False,
@@ -393,9 +445,16 @@ class Renders:
         """Submit without waiting. ``links=True`` sends ``Prefer: links``.
 
         The option has no effect once the API returns links by default.
+        ``retention_seconds`` works as in ``RenderClient.render``.
         """
         body, context, _ = _submission(
-            inspect_url, views, format, idempotency_key, stat_trak, appearance
+            inspect_url,
+            views,
+            format,
+            idempotency_key,
+            stat_trak,
+            appearance,
+            retention_seconds,
         )
         return await self._client._observe(
             "create",
@@ -423,6 +482,23 @@ class Renders:
                 timeout,
                 context,
             ),
+        )
+
+    async def delete(self, render_id: str, *, timeout: float = 120) -> None:
+        """End the render's retention now, after you saved its images.
+
+        Later reads raise ``RenderExpiredError``. Deleting a deleted render succeeds.
+        """
+        _validate_id(render_id)
+        context = _Context(render_id=render_id)
+
+        async def run(call: Call) -> None:
+            call.render_id = render_id
+            await self._client._send("DELETE", f"/v1/renders/{render_id}", context, call)
+
+        await self._client._observe(
+            "delete",
+            lambda call: self._client._bounded(lambda: run(call), timeout, context),
         )
 
     async def wait(

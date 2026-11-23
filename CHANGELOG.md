@@ -1,13 +1,28 @@
 # Changes
 
+## Retention and deletion
+
+| SDK | Version |
+| --- | --- |
+| TypeScript | 0.1.7 |
+| Python | 0.1.7 |
+| Go | 0.1.7 |
+| C# | 0.1.5 |
+
+A render request can set how long the API keeps its images and item data, from 3600 seconds (one hour) to 2592000 seconds (30 days). TypeScript uses `retentionSeconds`, Python uses `retention_seconds`, Go uses `Retention: render.RetainFor(d)` and C# uses `Retention = RenderRetention.For(d)`. The wire field is `retentionSeconds` in every SDK. Omitting it applies the API key's default retention, else the API keeps the images forever. An explicit null (`null`, `None`, `render.RetainForever()`, `RenderRetention.Forever`) keeps them forever even when the key has a default.
+
+`DELETE /v1/renders/{id}` ends a retention at once: `renders.delete` in TypeScript and Python, `Delete` in Go and `DeleteAsync` in C#. It succeeds again for a deleted render. Completed and pending render data carry the optional `retainUntil` timestamp when links are on.
+
+A read or idempotent replay of an expired or deleted render answers HTTP 410 `render_expired`. The SDKs raise a typed error for it and never retry it: `RenderExpiredError` in TypeScript and Python, an `*Error` matching `errors.Is(err, render.ErrRenderExpired)` in Go, and `RenderExpiredException` in C#. `wait` raises the same error when a polled render failed with `render_expired`. Existing handlers still catch it, because it is a `RenderError`, `*Error` or `RenderException` as before.
+
 ## Identification and telemetry
 
 | SDK | Version |
 | --- | --- |
-| TypeScript | unreleased |
-| Python | unreleased |
-| Go | unreleased |
-| C# | unreleased |
+| TypeScript | 0.1.7 |
+| Python | 0.1.7 |
+| Go | 0.1.7 |
+| C# | 0.1.5 |
 
 Every request sends `User-Agent: medalbot-render-<language>/<version> (<runtime>/<version>; <os>)`, `X-Medalbot-SDK: <language>/<version>` and a W3C `traceparent` whose trace ID is fixed for one call. Unless the caller turns it off, each call reports its timings to `POST /v1/telemetry/sdk` with the caller's key: total time, HTTP time, time to first byte, the API's `Server-Timing`, retries and backoff, polls and the wait between them, the error code and the server request ID. Python and Go add connect time; Go also adds DNS and TLS time. Reports are sampled (a quarter of fast, successful calls; every failed call and every call of three seconds or more), batched, and dropped on failure. Turn it off with the client option (`telemetry: false`, `telemetry=False`, `DisableTelemetry: true`, `Telemetry = false`) or `MEDALBOT_TELEMETRY=0`.
 

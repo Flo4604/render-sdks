@@ -68,6 +68,18 @@ public sealed class RenderClient : IDisposable
     public Task<RenderState> GetAsync(string renderId, RenderOptions? options, CancellationToken cancellationToken = default) =>
         Operate("get", null, operation => Get(renderId, operation, options?.Links ?? false), options, cancellationToken, renderId);
 
+    // Ends the render's retention now, after you saved its images. Later reads throw
+    // RenderExpiredException. Deleting a deleted render succeeds again.
+    public Task DeleteAsync(string renderId, RenderOptions? options = null, CancellationToken cancellationToken = default) =>
+        Operate("delete", null, async operation =>
+        {
+            if (!IdPattern.IsMatch(renderId)) throw new ArgumentException("Invalid render ID", nameof(renderId));
+            operation.Call.RenderId = renderId;
+            var (status, payload) = await Send(HttpMethod.Delete, $"v1/renders/{renderId}", null, null, operation).ConfigureAwait(false);
+            if (status != HttpStatusCode.NoContent) Parse(status, payload);
+            return true;
+        }, options, cancellationToken, renderId);
+
     public Task<RenderImages> WaitAsync(string renderId, RenderOptions? options = null,
         CancellationToken cancellationToken = default) => Operate("wait", null, async operation =>
     {
@@ -157,6 +169,8 @@ public sealed class RenderClient : IDisposable
 
         if (request.StatTrak is < 0 or > 999999)
             throw new ArgumentOutOfRangeException(nameof(request), "StatTrak must be between 0 and 999999");
+        if (request.Retention is { IsValid: false })
+            throw new ArgumentOutOfRangeException(nameof(request), "Retention must be whole seconds from one hour to 30 days");
         if (request.Views is { } views && (views.Count is < 1 or > 3 || views.Any(view => !Enum.IsDefined(view)) || views.Distinct().Count() != views.Count))
             throw new ArgumentException("Views must contain unique preview, front, or back values", nameof(request));
         operation.Key = options?.IdempotencyKey ?? Guid.NewGuid().ToString("N");
@@ -188,7 +202,7 @@ public sealed class RenderClient : IDisposable
         {
             operation.Token.ThrowIfCancellationRequested();
             if (state.Status == RenderStatus.Completed) return state.Images!;
-            if (state.Status == RenderStatus.Failed) throw new RenderException(state.Error!.Code, state.Error.Detail);
+            if (state.Status == RenderStatus.Failed) throw RenderException.For(state.Error!.Code, state.Error.Detail);
             var waited = operation.Call.Now;
             try { await Task.Delay(delay, operation.Token).ConfigureAwait(false); }
             finally { operation.Call.PollWaitMs += operation.Call.Now - waited; }
@@ -199,6 +213,16 @@ public sealed class RenderClient : IDisposable
     }
 
     private async Task<RenderState> Request(HttpMethod method, string path, string? body, string? prefer, Operation operation)
+    {
+        var (status, payload) = await Send(method, path, body, prefer, operation).ConfigureAwait(false);
+        var state = Parse(status, payload);
+        operation.RenderId ??= state.Id;
+        operation.Call.RenderId = operation.RenderId;
+        operation.RequestId = state.RequestId;
+        return state;
+    }
+
+    private async Task<(HttpStatusCode Status, byte[] Payload)> Send(HttpMethod method, string path, string? body, string? prefer, Operation operation)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -230,11 +254,7 @@ public sealed class RenderClient : IDisposable
                 byte[] payload;
                 try { payload = await ReadBody(response, operation.Token).ConfigureAwait(false); }
                 finally { operation.Call.Attempt(started); attempted = true; }
-                var state = Parse(response.StatusCode, payload);
-                operation.RenderId ??= state.Id;
-                operation.Call.RenderId = operation.RenderId;
-                operation.RequestId = state.RequestId;
-                return state;
+                return (response.StatusCode, payload);
             }
             catch (HttpRequestException error)
             {
@@ -299,7 +319,9 @@ public sealed class RenderClient : IDisposable
                     if (error.TryGetProperty("code", out value)) code = value.GetString() ?? code;
                     if (error.TryGetProperty("detail", out value) || error.TryGetProperty("message", out value)) detail = value.GetString() ?? detail;
                 }
-                throw new RenderException(code, detail, (int)status) { RequestId = requestId };
+                var failed = RenderException.For(code, detail, (int)status);
+                failed.RequestId = requestId;
+                throw failed;
             }
             if (string.IsNullOrWhiteSpace(requestId)) throw InvalidResponse("Response has no request ID");
             var data = root.GetProperty("data");
@@ -337,7 +359,10 @@ public sealed class RenderClient : IDisposable
             }
             if (state != RenderStatus.Failed && data.TryGetProperty("links", out var linkMap))
                 links = ParseViews(linkMap, "link");
-            return new(id, state, images, failure, requestId) { Links = links };
+            DateTimeOffset? retainUntil = null;
+            if (state != RenderStatus.Failed && data.TryGetProperty("retainUntil", out var until))
+                retainUntil = until.TryGetDateTimeOffset(out var parsed) ? parsed : throw InvalidResponse("Response has an invalid retainUntil");
+            return new(id, state, images, failure, requestId) { Links = links, RetainUntil = retainUntil };
         }
         catch (RenderException error)
         {

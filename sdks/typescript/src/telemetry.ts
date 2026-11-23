@@ -3,7 +3,7 @@
 // call becomes one `sdk_call` event; events go to `POST /v1/telemetry/sdk` in batches, and a
 // failed send is dropped. Nothing here throws into the caller or delays a render.
 
-export const version = "0.1.6";
+export const version = "0.1.7";
 
 export type TelemetryOption = boolean | { sampleRate?: number };
 
@@ -30,7 +30,14 @@ const hex = (bytes: number) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
 
-export type Op = "render" | "wait" | "create" | "get" | "batch" | "lookup";
+export type Op =
+  | "render"
+  | "wait"
+  | "create"
+  | "get"
+  | "delete"
+  | "batch"
+  | "lookup";
 
 // What one call observed. HTTP time covers each attempt from send to the end of the body; the
 // sleeps between polls and between retries are counted apart from it. `server_ms` sums the API's

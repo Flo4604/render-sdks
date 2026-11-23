@@ -9,6 +9,7 @@ from .models import (
     PendingRender,
     Render,
     RenderError,
+    RenderExpiredError,
     View,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "Render",
     "RenderClient",
     "RenderError",
+    "RenderExpiredError",
     "View",
     "image_url",
 ]

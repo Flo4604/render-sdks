@@ -128,6 +128,23 @@ The link is final at admission. The image host holds a request for a pending lin
 
 `links=True` on `renders.create()` and `renders.get()` sends `Prefer: links`; `PendingRender` and `CompletedRender` expose it as `links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
 
+## Keep or delete the images
+
+The API keeps a render's images forever unless you ask otherwise. If you store the images yourself, set `retention_seconds` to keep them for one hour to 30 days, then delete the render once you have saved them:
+
+```python
+render = await client.renders.create(
+    inspect_url=inspect_url, retention_seconds=3600, links=True
+)
+images = await client.renders.wait(render.id)
+await save_images(images)
+await client.renders.delete(render.id)
+```
+
+`render()` accepts `retention_seconds` too. Omit it to use your API key's default retention, if it has one. `retention_seconds=None` keeps the images forever even when the key has a default. `renders.delete` succeeds again for a render that is already deleted.
+
+A render with a retention carries ``retain_until`` when links are on. After that time, or after a delete, a read of the render or a replay of its idempotency key fails with a `RenderExpiredError` (a `RenderError` with code `render_expired`), and a batch or lookup entry fails with code `render_expired`. Do not retry it, because the images are gone; submit again with a new idempotency key to render the item again. An image that another caller's render still keeps stays stored until that render's retention ends.
+
 ## Image delivery
 
 ```python
