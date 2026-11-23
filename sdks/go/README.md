@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/sdks/go@v0.1.6
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.7
 ```
 
 ```go
@@ -129,6 +129,32 @@ if link, ok := result.Links[render.Front]; ok {
 The link is final at admission. The image host holds a request for a pending link for up to 20 seconds and answers with the image as soon as it exists, so a chat embed that fetches it a few seconds later gets the image instead of a 404. A render that takes longer than the hold, or fails, answers 503 with `Retry-After: 2`; wait for the finished images instead if your client keeps that response. A completed render's links equal its images, and a failed render has no links. Completion still depends on images, so `Render` and `Wait` keep returning finished images.
 
 `SubmitOptions.Links` on `Create` and `GetOptions.Links` on `Get` sends `Prefer: links`; with `Render` it combines with the wait as `Prefer: wait=10, links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
+
+## Keep or delete the images
+
+The API keeps a render's images forever unless you ask otherwise. If you store the images yourself, set `Retention` to keep them for one hour to 30 days, then delete the render once you have saved them:
+
+```go
+created, err := client.Create(ctx, render.RenderRequest{
+    InspectURL: inspectURL,
+    Retention:  render.RetainFor(time.Hour),
+}, render.SubmitOptions{Links: true})
+if err != nil {
+    return err
+}
+images, err := client.Wait(ctx, created.ID)
+if err != nil {
+    return err
+}
+if err := saveImages(images); err != nil {
+    return err
+}
+return client.Delete(ctx, created.ID)
+```
+
+A nil `Retention` uses your API key's default retention, if it has one. `render.RetainForever()` keeps the images forever even when the key has a default. `Delete` succeeds again for a render that is already deleted.
+
+A render with a retention carries ``RetainUntil`` when links are on. After that time, or after a delete, a read of the render or a replay of its idempotency key fails with an `*Error` with code `render_expired` that matches `errors.Is(err, render.ErrRenderExpired)`, and a batch or lookup entry fails with code `render_expired`. Do not retry it, because the images are gone; submit again with a new idempotency key to render the item again. An image that another caller's render still keeps stays stored until that render's retention ends.
 
 ## Image delivery
 

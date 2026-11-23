@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Medalbot.Render;
 
 public enum RenderView { Preview, Front, Back }
@@ -12,6 +15,43 @@ public sealed record RenderRequest
     public ImageFormat? Format { get; init; }
     public RenderAppearance? Appearance { get; init; }
     public int? StatTrak { get; init; }
+    // How long the API keeps the images. Null uses the API key's default, which keeps them forever
+    // unless the key sets one.
+    [JsonPropertyName("retentionSeconds")]
+    [JsonConverter(typeof(RenderRetentionConverter))]
+    public RenderRetention? Retention { get; init; }
+}
+
+public sealed record RenderRetention
+{
+    // Whole seconds from one hour to 30 days; null keeps the images forever.
+    public TimeSpan? Duration { get; }
+
+    private RenderRetention(TimeSpan? duration) { Duration = duration; }
+
+    // Keeps the images forever, even when the API key has a default retention.
+    public static RenderRetention Forever { get; } = new((TimeSpan?)null);
+
+    public static RenderRetention For(TimeSpan duration) => new(duration);
+
+    internal bool IsValid => Duration is not { } duration ||
+        (duration.Ticks % TimeSpan.TicksPerSecond == 0 && duration >= TimeSpan.FromHours(1) && duration <= TimeSpan.FromDays(30));
+}
+
+internal sealed class RenderRetentionConverter : JsonConverter<RenderRetention>
+{
+    public override RenderRetention Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        throw new NotSupportedException();
+
+    public override void Write(Utf8JsonWriter writer, RenderRetention value, JsonSerializerOptions options)
+    {
+        if (value.Duration is { } duration)
+        {
+            writer.WriteNumberValue((long)duration.TotalSeconds);
+            return;
+        }
+        writer.WriteNullValue();
+    }
 }
 
 public sealed record RenderImages(string? Preview, string? Front, string? Back)
@@ -35,6 +75,8 @@ public sealed record RenderState(string Id, RenderStatus Status, RenderImages? I
     // completed states when the request sets RenderOptions.Links, or by default once the API enables
     // links. Completion still depends on Images.
     public RenderImages? Links { get; init; }
+    // When the API stops keeping the images. Null for a render kept forever, and when links are off.
+    public DateTimeOffset? RetainUntil { get; init; }
 }
 
 public sealed record RenderClientOptions
@@ -58,7 +100,7 @@ public sealed record RenderOptions
     public bool Links { get; init; }
 }
 
-public sealed class RenderException : Exception
+public class RenderException : Exception
 {
     public string Code { get; }
     public int? StatusCode { get; }
@@ -68,6 +110,18 @@ public sealed class RenderException : Exception
 
     internal RenderException(string code, string detail, int? statusCode = null, Exception? inner = null)
         : base(detail, inner) { Code = code; StatusCode = statusCode; }
+
+    internal static RenderException For(string code, string detail, int? statusCode = null) =>
+        code == RenderExpiredException.ErrorCode ? new RenderExpiredException(detail, statusCode) : new RenderException(code, detail, statusCode);
+}
+
+// The render's retention ended or it was deleted, so the API no longer has its images. Retrying never
+// succeeds; submit again with a new idempotency key to render the item again.
+public sealed class RenderExpiredException : RenderException
+{
+    public const string ErrorCode = "render_expired";
+
+    internal RenderExpiredException(string detail, int? statusCode = null) : base(ErrorCode, detail, statusCode) { }
 }
 
 // Preserve normal .NET cancellation handling while retaining resumable identifiers.

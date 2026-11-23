@@ -22,7 +22,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte, 
 		current = &call{traceID: randomHex(16), started: time.Now()}
 	}
 	result, err := c.attempts(ctx, method, path, body, headers, current)
-	if err == nil {
+	if err == nil && result != nil {
 		current.mu.Lock()
 		current.renderID = result.ID
 		current.mu.Unlock()
@@ -105,6 +105,9 @@ func (c *Client) attempts(ctx context.Context, method, path string, body []byte,
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return nil, responseError(response, payload)
+		}
+		if method == http.MethodDelete && response.StatusCode == http.StatusNoContent {
+			return nil, nil
 		}
 		if len(payload) > maxResponseBytes {
 			return nil, &Error{Code: "invalid_response", Detail: "Response exceeds 1 MiB", RequestID: response.Header.Get("X-Request-Id")}

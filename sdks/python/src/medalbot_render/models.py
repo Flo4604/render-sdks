@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -26,6 +27,9 @@ def _validate_url(value: str) -> str:
 
 
 ImageUrl = Annotated[str, AfterValidator(_validate_url)]
+# When the API stops keeping the render's images. None for a render kept forever, and
+# when links are off. JSON carries it as an ISO 8601 string, so it is parsed leniently.
+RetainUntil = Annotated[datetime | None, Field(alias="retainUntil", strict=False)]
 
 
 class _Model(BaseModel):
@@ -44,6 +48,7 @@ class CompletedRender(_Model):
     images: dict[View, ImageUrl] = Field(min_length=1, max_length=3)
     # Equals ``images`` when present. See ``PendingRender.links``.
     links: dict[View, ImageUrl] | None = None
+    retain_until: RetainUntil = None
 
 
 class PendingRender(_Model):
@@ -52,6 +57,7 @@ class PendingRender(_Model):
     # One URL per requested view, final at admission. The media edge serves it once
     # the image exists. Present with ``links=True`` or once the API defaults links on.
     links: dict[View, ImageUrl] | None = None
+    retain_until: RetainUntil = None
 
 
 class FailedRender(_Model):
@@ -92,3 +98,21 @@ class RenderError(Exception):
         self.request_id = request_id
         self.idempotency_key = idempotency_key
         self.status_code = status_code
+
+
+class RenderExpiredError(RenderError):
+    """The render's retention ended or it was deleted, so its images are gone.
+
+    Retrying never succeeds. Submit again with a new idempotency key to render it again.
+    """
+
+
+def render_error(
+    code: str,
+    detail: str,
+    *,
+    request_id: str | None = None,
+    status_code: int | None = None,
+) -> RenderError:
+    kind = RenderExpiredError if code == "render_expired" else RenderError
+    return kind(code, detail, request_id=request_id, status_code=status_code)

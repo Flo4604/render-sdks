@@ -111,6 +111,25 @@ func (c *Client) Get(ctx context.Context, id string, options ...GetOptions) (ren
 	return render, enrich(err, id, "")
 }
 
+// Delete ends the render's retention now, after you saved its images. Later reads
+// fail with ErrRenderExpired. Deleting a deleted render succeeds again.
+func (c *Client) Delete(ctx context.Context, id string) (err error) {
+	ctx, done := c.observe(ctx, "delete", 0)
+	defer func() { done(err) }()
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if !renderIDPattern.MatchString(id) {
+		return enrich(invalidInput("Invalid render ID"), id, "")
+	}
+	if current := callFrom(ctx); current != nil {
+		current.mu.Lock()
+		current.renderID = id
+		current.mu.Unlock()
+	}
+	_, err = c.request(ctx, http.MethodDelete, "/v1/renders/"+id, nil, nil)
+	return enrich(err, id, "")
+}
+
 // Wait resumes a render and returns its images when complete.
 func (c *Client) Wait(ctx context.Context, id string) (images Images, err error) {
 	ctx, done := c.observe(ctx, "wait", 0)
@@ -231,6 +250,9 @@ func validateInput(input RenderRequest) error {
 	}
 	if input.StatTrak != nil && (*input.StatTrak < 0 || *input.StatTrak > 999999) {
 		return invalidInput("StatTrak must be an integer from 0 to 999999")
+	}
+	if input.Retention != nil && !input.Retention.valid() {
+		return invalidInput("Retention must be whole seconds from one hour to 30 days")
 	}
 	seen := make(map[View]bool)
 	for _, view := range input.Views {

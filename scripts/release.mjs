@@ -69,6 +69,8 @@ if (language === "typescript") {
       "protocol.d.ts",
       "media.js",
       "media.d.ts",
+      "telemetry.js",
+      "telemetry.d.ts",
     ].map((name) => `package/dist/src/${name}`),
   ]);
   if (members.some((name) => !allowed.has(name)))
@@ -87,7 +89,7 @@ if (language === "typescript") {
   if (
     members.some(
       (name) =>
-        !/^medalbot_render\/(__init__\.py|client\.py|models\.py|media\.py|py\.typed)$/.test(
+        !/^medalbot_render\/(__init__\.py|client\.py|models\.py|media\.py|telemetry\.py|py\.typed)$/.test(
           name,
         ) &&
         !/^medalbot_render-[^/]+\.dist-info\/(METADATA|WHEEL|RECORD|licenses\/LICENSE)$/.test(

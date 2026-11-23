@@ -672,6 +672,76 @@ tests.Add(("a refused report stops reports, and Dispose sends what is buffered",
     Equal(1, sent.Count);
 }));
 
+tests.Add(("retention sends seconds or null and is omitted when unset", async () =>
+{
+    var bodies = new List<JsonElement>();
+    using var handler = new MockHandler(async (message, _) =>
+    {
+        bodies.Add(JsonDocument.Parse(await message.Content!.ReadAsStringAsync()).RootElement.Clone());
+        return Response(Envelope(new { id, images = new { front }, retainUntil = "2026-11-23T13:00:00.000Z" }));
+    });
+    using var client = Client(handler);
+    var kept = await client.CreateAsync(request with { Retention = RenderRetention.For(TimeSpan.FromHours(1)) });
+    await client.CreateAsync(request with { Retention = RenderRetention.Forever });
+    await client.CreateAsync(request);
+    Equal(3600, bodies[0].GetProperty("retentionSeconds").GetInt32());
+    Equal(JsonValueKind.Null, bodies[1].GetProperty("retentionSeconds").ValueKind);
+    Equal(false, bodies[2].TryGetProperty("retentionSeconds", out _));
+    Equal(new DateTimeOffset(2026, 11, 23, 13, 0, 0, TimeSpan.Zero), kept.RetainUntil);
+}));
+
+tests.Add(("retention outside one hour to 30 days is rejected before sending", async () =>
+{
+    using var handler = new MockHandler((_, _) => throw new Exception("no request expected"));
+    using var client = Client(handler);
+    foreach (var duration in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(3599), TimeSpan.FromDays(30) + TimeSpan.FromSeconds(1), TimeSpan.FromHours(1) + TimeSpan.FromMilliseconds(1) })
+        await Throws<ArgumentOutOfRangeException>(() => client.CreateAsync(request with { Retention = RenderRetention.For(duration) }));
+    Equal(0, handler.Calls);
+}));
+
+tests.Add(("delete sends DELETE and accepts an empty 204", async () =>
+{
+    using var handler = new MockHandler((message, _) =>
+    {
+        Equal(HttpMethod.Delete, message.Method);
+        Equal($"https://render.medalbot.cc/v1/renders/{id}", message.RequestUri!.ToString());
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+    });
+    using var client = Client(handler);
+    await client.DeleteAsync(id);
+    Equal(1, handler.Calls);
+}));
+
+tests.Add(("a 410 render_expired throws RenderExpiredException once, without a retry", async () =>
+{
+    var body = JsonSerializer.Serialize(new
+    {
+        meta = new { requestId = "req_expired" },
+        error = new { status = 410, code = "render_expired", title = "Gone", detail = "The render's retention ended", type = "urn:skinicon:error:render_expired" },
+    });
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(body, HttpStatusCode.Gone)));
+    using var client = Client(handler);
+    var error = await Throws<RenderExpiredException>(() => client.GetAsync(id));
+    Equal("render_expired", error.Code);
+    Equal(410, error.StatusCode);
+    Equal("req_expired", error.RequestId);
+    Equal(id, error.RenderId);
+    Equal(1, handler.Calls);
+}));
+
+tests.Add(("waiting on an expired render throws RenderExpiredException", async () =>
+{
+    using var handler = new MockHandler((_, _) => Task.FromResult(Response(Envelope(new
+    {
+        id,
+        status = "failed",
+        error = new { code = "render_expired", detail = "The render's retention ended" },
+    }))));
+    using var client = Client(handler);
+    var error = await Throws<RenderExpiredException>(() => client.WaitAsync(id));
+    Equal(id, error.RenderId);
+}));
+
 var failures = 0;
 foreach (var (name, run) in tests)
 {

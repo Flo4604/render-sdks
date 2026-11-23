@@ -2,8 +2,10 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -54,6 +56,37 @@ type RenderRequest struct {
 	Appearance Appearance `json:"appearance,omitempty"`
 	// StatTrak overrides the displayed counter. Nil preserves the item's counter.
 	StatTrak *int `json:"statTrak,omitempty"`
+	// Retention sets how long the API keeps the images. Nil uses the API key's default,
+	// which keeps them forever unless the key sets one.
+	Retention *Retention `json:"retentionSeconds,omitempty"`
+}
+
+// Retention is how long the API keeps a render's images and item data. Build it with
+// RetainFor or RetainForever.
+type Retention struct {
+	duration time.Duration
+	forever  bool
+}
+
+// RetainFor keeps the images for d, a whole number of seconds from one hour to 30 days.
+func RetainFor(d time.Duration) *Retention { return &Retention{duration: d} }
+
+// RetainForever keeps the images forever, even when the API key has a default retention.
+func RetainForever() *Retention { return &Retention{forever: true} }
+
+func (r Retention) valid() bool {
+	if r.forever {
+		return true
+	}
+	return r.duration%time.Second == 0 && r.duration >= time.Hour && r.duration <= 30*24*time.Hour
+}
+
+// MarshalJSON writes the seconds, or null for RetainForever.
+func (r Retention) MarshalJSON() ([]byte, error) {
+	if r.forever {
+		return []byte("null"), nil
+	}
+	return strconv.AppendInt(nil, int64(r.duration/time.Second), 10), nil
 }
 
 // Images maps each requested view to its public image URL.
@@ -75,9 +108,12 @@ type Render struct {
 	// view's link equals its image URL. Pending and completed states carry it when the
 	// request asks for links, or by default once the API enables links. Failed states
 	// have none. Completion still depends on Images, not Links.
-	Links     Images   `json:"links,omitempty"`
-	Error     *Failure `json:"error,omitempty"`
-	RequestID string   `json:"-"`
+	Links Images `json:"links,omitempty"`
+	// RetainUntil is when the API stops keeping the images. Nil for a render kept
+	// forever, and when links are off.
+	RetainUntil *time.Time `json:"retainUntil,omitempty"`
+	Error       *Failure   `json:"error,omitempty"`
+	RequestID   string     `json:"-"`
 }
 
 // SubmitOptions allows retries across separate calls to reuse the same admission.
@@ -103,5 +139,13 @@ type Error struct {
 	cause          error
 }
 
+// ErrRenderExpired matches, through errors.Is, an *Error for a render whose retention
+// ended or that was deleted. Retrying never succeeds; submit again with a new
+// idempotency key to render the item again.
+var ErrRenderExpired = errors.New("render: render expired")
+
 func (e *Error) Error() string { return fmt.Sprintf("render: %s: %s", e.Code, e.Detail) }
 func (e *Error) Unwrap() error { return e.cause }
+func (e *Error) Is(target error) bool {
+	return target == ErrRenderExpired && e.Code == "render_expired"
+}

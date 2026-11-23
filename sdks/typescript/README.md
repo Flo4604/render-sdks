@@ -92,6 +92,24 @@ The link is final at admission. The image host holds a request for a pending lin
 
 `links: true` on `renders.create`, `get`, `batch` and `lookup` sends `Prefer: links`, and each batch or lookup item carries its own `links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
 
+## Keep or delete the images
+
+The API keeps a render's images forever unless you ask otherwise. If you store the images yourself, set `retentionSeconds` to keep them for one hour to 30 days, then delete the render once you have saved them:
+
+```ts
+const render = await client.renders.create(
+  { inspectUrl, retentionSeconds: 3600 },
+  { links: true },
+);
+const images = await client.renders.wait(render.id);
+await saveImages(images);
+await client.renders.delete(render.id);
+```
+
+Omit `retentionSeconds` to use your API key's default retention, if it has one. `retentionSeconds: null` keeps the images forever even when the key has a default. `renders.delete` succeeds again for a render that is already deleted.
+
+A render with a retention carries ``retainUntil`` when links are on. After that time, or after a delete, a read of the render or a replay of its idempotency key fails with a `RenderExpiredError` (a `RenderError` with code `render_expired`), and a batch or lookup entry fails with code `render_expired`. Do not retry it, because the images are gone; submit again with a new idempotency key to render the item again. An image that another caller's render still keeps stays stored until that render's retention ends.
+
 ## Image delivery
 
 ```ts

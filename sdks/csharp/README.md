@@ -3,7 +3,7 @@
 `RenderAsync` returns finished image URLs, whether the images are cached or need a new render. It handles submission, retries, and polling. The package targets .NET 8 or later and has no package dependencies.
 
 ```sh
-dotnet add package Medalbot.Render --version 0.1.4
+dotnet add package Medalbot.Render --version 0.1.5
 ```
 
 ```csharp
@@ -92,6 +92,25 @@ if (state.Links?.Front is { } link)
 The link is final at admission. The image host holds a request for a pending link for up to 20 seconds and answers with the image as soon as it exists, so a chat embed that fetches it a few seconds later gets the image instead of a 404. A render that takes longer than the hold, or fails, answers 503 with `Retry-After: 2`; wait for the finished images instead if your client keeps that response. A completed render's links equal its images, and a failed render has no links. Completion still depends on images, so `RenderAsync` and `WaitAsync` keep returning finished images.
 
 `RenderOptions.Links` on `CreateAsync` and `GetAsync(id, options)` sends `Prefer: links`; with `RenderAsync` it combines with the wait as `Prefer: wait=10, links`. Until the API enables links, it ignores the preference and the field is absent, so handle a missing link. Once the API returns links by default, the field is present without the option and the option changes nothing. If the API admits the render but cannot prepare its links, it answers 503 `render_links_unavailable` with `Retry-After`. The SDK retries it with the same idempotency key, like other 503 responses. Response parsing ignores fields this SDK version does not know, so a field the API adds later does not break it.
+
+## Keep or delete the images
+
+The API keeps a render's images forever unless you ask otherwise. If you store the images yourself, set `Retention` to keep them for one hour to 30 days, then delete the render once you have saved them:
+
+```csharp
+var render = await client.CreateAsync(new RenderRequest
+{
+    InspectUrl = inspectUrl,
+    Retention = RenderRetention.For(TimeSpan.FromHours(1)),
+}, new RenderOptions { Links = true });
+var images = await client.WaitAsync(render.Id);
+await SaveImagesAsync(images);
+await client.DeleteAsync(render.Id);
+```
+
+A null `Retention` uses your API key's default retention, if it has one. `RenderRetention.Forever` keeps the images forever even when the key has a default. `DeleteAsync` succeeds again for a render that is already deleted.
+
+A render with a retention carries ``RetainUntil`` when links are on. After that time, or after a delete, a read of the render or a replay of its idempotency key fails with a `RenderExpiredException` (a `RenderException` with code `render_expired`), and a batch or lookup entry fails with code `render_expired`. Do not retry it, because the images are gone; submit again with a new idempotency key to render the item again. An image that another caller's render still keeps stays stored until that render's retention ends.
 
 ## Image delivery
 

@@ -21,6 +21,9 @@ export const RenderRequest = z.strictObject({
   format: Format.default("webp"),
   appearance: Appearance.optional(),
   statTrak: z.int().min(0).max(999999).optional(),
+  // Seconds the API keeps the images, from one hour to 30 days. Omit it for the key's
+  // default; null keeps the images forever even when the key has a default.
+  retentionSeconds: z.int().min(3600).max(2592000).nullable().optional(),
 });
 export type RenderRequest = z.output<typeof RenderRequest>;
 export type RenderInput = z.input<typeof RenderRequest>;
@@ -37,12 +40,21 @@ export type ImageUrls = z.infer<typeof ImageUrls>;
 // API enables links for every response.
 export const ImageLinks = z.partialRecord(View, z.url());
 export type ImageLinks = z.infer<typeof ImageLinks>;
+// When the API stops keeping the render's images. Absent for a render kept forever, and
+// with `Prefer: no-links`.
+const RetainUntil = z.iso.datetime({ offset: true }).optional();
 export const RenderData = z.union([
-  z.object({ id: RenderId, images: ImageUrls, links: ImageLinks.optional() }),
+  z.object({
+    id: RenderId,
+    images: ImageUrls,
+    links: ImageLinks.optional(),
+    retainUntil: RetainUntil,
+  }),
   z.object({
     id: RenderId,
     status: z.enum(["queued", "rendering", "processing"]),
     links: ImageLinks.optional(),
+    retainUntil: RetainUntil,
   }),
   z.object({ id: RenderId, status: z.literal("failed"), error: Failure }),
 ]);
