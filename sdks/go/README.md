@@ -5,7 +5,7 @@
 The module uses Go 1.22 or later and has no external dependencies. Install the public module:
 
 ```bash
-go get github.com/Flo4604/render-sdks/sdks/go@v0.1.7
+go get github.com/Flo4604/render-sdks/sdks/go@v0.1.8
 ```
 
 ```go
@@ -71,6 +71,17 @@ images, err := client.Render(ctx, render.RenderRequest{
 ```
 
 The server supports pattern appearance for AK-47 preview, front, and back images. Omit `Views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`; the SDK preserves that error. The server determines support, so the SDK does not restrict items or views locally.
+
+`Framing` picks the camera for guns that have a charm camera. Omit it or use `render.FramingAuto` to use the charm camera only when the item has a charm. Use `render.FramingCharm` to use the charm camera for every item of such a gun, with or without a charm, so all its images share one perspective. Use `render.FramingStandard` to always use the gun's normal camera, even when the item has a charm:
+
+```go
+images, err := client.Render(ctx, render.RenderRequest{
+    InspectURL: inspectURL,
+    Framing:    render.FramingCharm,
+})
+```
+
+`Render` and `Create` return an `invalid_input` error for any other value before they send the request.
 
 Network errors and HTTP 429, 502, 503, and 504 receive at most three retries per request. Retries preserve the submission body and idempotency key. `Retry-After` accepts seconds or an HTTP date; the operation deadline bounds the wait. `Config.HTTPClient` lets you supply a transport for proxies, tracing, or tests. The SDK copies the HTTP client and disables redirects to avoid forwarding credentials.
 

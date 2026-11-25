@@ -167,6 +167,11 @@ public sealed class RenderClient : IDisposable
             throw new ArgumentException("Unknown render appearance", nameof(request));
         }
 
+        if (request.Framing is { } framing && !Enum.IsDefined(framing))
+        {
+            throw new ArgumentException("Unknown render framing", nameof(request));
+        }
+
         if (request.StatTrak is < 0 or > 999999)
             throw new ArgumentOutOfRangeException(nameof(request), "StatTrak must be between 0 and 999999");
         if (request.Retention is { IsValid: false })

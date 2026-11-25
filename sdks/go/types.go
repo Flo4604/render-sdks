@@ -47,6 +47,18 @@ const (
 	AppearancePattern Appearance = "pattern"
 )
 
+// Framing picks the camera for a gun that has a charm camera.
+type Framing string
+
+const (
+	// FramingAuto uses the charm camera only when the item has a charm.
+	FramingAuto Framing = "auto"
+	// FramingCharm uses the charm camera for every item of the gun, with or without a charm.
+	FramingCharm Framing = "charm"
+	// FramingStandard always uses the gun's normal camera, even when the item has a charm.
+	FramingStandard Framing = "standard"
+)
+
 // RenderRequest defaults to all three views in lossless WebP.
 type RenderRequest struct {
 	InspectURL string `json:"inspectUrl"`
@@ -54,6 +66,8 @@ type RenderRequest struct {
 	Format     Format `json:"format,omitempty"`
 	// Appearance selects lighting. The zero value preserves the default rendering.
 	Appearance Appearance `json:"appearance,omitempty"`
+	// Framing selects the camera. The zero value behaves as FramingAuto.
+	Framing Framing `json:"framing,omitempty"`
 	// StatTrak overrides the displayed counter. Nil preserves the item's counter.
 	StatTrak *int `json:"statTrak,omitempty"`
 	// Retention sets how long the API keeps the images. Nil uses the API key's default,

@@ -22,6 +22,7 @@ from .models import (
     CompletedRender,
     FailedRender,
     Format,
+    Framing,
     Images,
     Render,
     RenderError,
@@ -79,6 +80,7 @@ def _submission(
     idempotency_key: str | None,
     stat_trak: int | None,
     appearance: Appearance | None,
+    framing: Framing | None,
     retention_seconds: Retention,
 ) -> tuple[dict[str, object], _Context, tuple[View, ...]]:
     if not isinstance(inspect_url, str) or not 1 <= len(inspect_url) <= 32768:
@@ -88,6 +90,8 @@ def _submission(
         raise ValueError("format must be webp or png")
     if appearance is not None and appearance not in ("default", "pattern"):
         raise ValueError("appearance must be default or pattern")
+    if framing is not None and framing not in ("auto", "charm", "standard"):
+        raise ValueError("framing must be auto, charm or standard")
     if stat_trak is not None and (
         type(stat_trak) is not int or not 0 <= stat_trak <= 999999
     ):
@@ -108,6 +112,8 @@ def _submission(
         body["statTrak"] = stat_trak
     if appearance is not None:
         body["appearance"] = appearance
+    if framing is not None:
+        body["framing"] = framing
     if not isinstance(retention_seconds, _KeyDefault):
         body["retentionSeconds"] = retention_seconds
     return (
@@ -391,6 +397,7 @@ class RenderClient:
         format: Format = "webp",
         stat_trak: int | None = None,
         appearance: Appearance | None = None,
+        framing: Framing | None = None,
         retention_seconds: Retention = _KEY_DEFAULT,
         timeout: float = 120,
         idempotency_key: str | None = None,
@@ -407,6 +414,7 @@ class RenderClient:
             idempotency_key,
             stat_trak,
             appearance,
+            framing,
             retention_seconds,
         )
 
@@ -437,6 +445,7 @@ class Renders:
         format: Format = "webp",
         stat_trak: int | None = None,
         appearance: Appearance | None = None,
+        framing: Framing | None = None,
         retention_seconds: Retention = _KEY_DEFAULT,
         timeout: float = 120,
         idempotency_key: str | None = None,
@@ -454,6 +463,7 @@ class Renders:
             idempotency_key,
             stat_trak,
             appearance,
+            framing,
             retention_seconds,
         )
         return await self._client._observe(

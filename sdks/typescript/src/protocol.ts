@@ -5,6 +5,8 @@ export type View = z.infer<typeof View>;
 export const Format = z.enum(["png", "webp"]);
 export const Appearance = z.enum(["default", "pattern"]);
 export type Appearance = z.infer<typeof Appearance>;
+export const Framing = z.enum(["auto", "charm", "standard"]);
+export type Framing = z.infer<typeof Framing>;
 
 export const RenderId = z
   .string()
@@ -20,6 +22,7 @@ export const RenderRequest = z.strictObject({
     .default(["preview", "front", "back"]),
   format: Format.default("webp"),
   appearance: Appearance.optional(),
+  framing: Framing.optional(),
   statTrak: z.int().min(0).max(999999).optional(),
   // Seconds the API keeps the images, from one hour to 30 days. Omit it for the key's
   // default; null keeps the images forever even when the key has a default.

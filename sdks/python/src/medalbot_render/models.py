@@ -16,6 +16,7 @@ from pydantic import (
 View = Literal["preview", "front", "back"]
 Format = Literal["png", "webp"]
 Appearance = Literal["default", "pattern"]
+Framing = Literal["auto", "charm", "standard"]
 RenderId = Annotated[str, StringConstraints(pattern=r"^rnd_(?:[0-7][0-9A-HJKMNP-TV-Z]{25}|[a-f0-9]{32})$")]
 Images = dict[View, str]
 _url = TypeAdapter(HttpUrl)

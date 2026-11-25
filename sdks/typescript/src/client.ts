@@ -451,6 +451,7 @@ export class RenderClient {
 
 export type {
   Appearance,
+  Framing,
   RenderInput,
   RenderData,
   ImageLinks,
