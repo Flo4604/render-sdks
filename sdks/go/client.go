@@ -248,6 +248,9 @@ func validateInput(input RenderRequest) error {
 	if input.Appearance != "" && input.Appearance != AppearanceDefault && input.Appearance != AppearancePattern {
 		return invalidInput("Appearance must be default or pattern")
 	}
+	if input.Framing != "" && input.Framing != FramingAuto && input.Framing != FramingCharm && input.Framing != FramingStandard {
+		return invalidInput("Framing must be auto, charm or standard")
+	}
 	if input.StatTrak != nil && (*input.StatTrak < 0 || *input.StatTrak > 999999) {
 		return invalidInput("StatTrak must be an integer from 0 to 999999")
 	}

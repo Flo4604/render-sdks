@@ -3,7 +3,7 @@
 // call becomes one `sdk_call` event; events go to `POST /v1/telemetry/sdk` in batches, and a
 // failed send is dropped. Nothing here throws into the caller or delays a render.
 
-export const version = "0.1.7";
+export const version = "0.1.8";
 
 export type TelemetryOption = boolean | { sampleRate?: number };
 

@@ -1,5 +1,16 @@
 # Changes
 
+## Framing
+
+| SDK | Version |
+| --- | --- |
+| TypeScript | 0.1.8 |
+| Python | 0.1.8 |
+| Go | 0.1.8 |
+| C# | 0.1.6 |
+
+A render request can pick the camera for a gun that has a charm camera, so a charmed and an uncharmed item of the same gun can show the gun at the same size. The wire field is `framing` in every SDK, with three values. `auto` uses the charm camera only when the item has a charm, which is also what omitting the field does. `charm` uses the charm camera for every item of such a gun, with or without a charm. `standard` always uses the gun's normal camera, even when the item has a charm. TypeScript uses `framing` with the exported `Framing` type, Python uses the `framing` keyword with the exported `Framing` literal, Go uses `Framing: render.FramingCharm` (`FramingAuto`, `FramingCharm`, `FramingStandard`) and C# uses `Framing = RenderFraming.Charm`. Each SDK rejects any other value before it sends the request. In TypeScript, `framing` also works inside `renders.batch` requests.
+
 ## Retention and deletion
 
 | SDK | Version |

@@ -128,6 +128,62 @@ tests.Add(("invalid appearances fail before HTTP for Render and Create", async (
     Equal(0, handler.Calls);
 }));
 
+tests.Add(("framing serializes explicit values and omits unspecified values for Render and Create", async () =>
+{
+    var wire = new Dictionary<RenderFraming, string>
+    {
+        [RenderFraming.Auto] = "auto",
+        [RenderFraming.Charm] = "charm",
+        [RenderFraming.Standard] = "standard",
+    };
+
+    foreach (var create in new[] { false, true })
+    {
+        foreach (var framing in new RenderFraming?[] { null, RenderFraming.Auto, RenderFraming.Charm, RenderFraming.Standard })
+        {
+            using var handler = new MockHandler(async (message, _) =>
+            {
+                using var body = JsonDocument.Parse(await message.Content!.ReadAsStringAsync());
+                Equal(framing.HasValue, body.RootElement.TryGetProperty("framing", out var value));
+
+                if (framing is { } expected)
+                {
+                    Equal(wire[expected], value.GetString());
+                }
+
+                return Response(Complete());
+            });
+            using var client = Client(handler);
+            var framingRequest = request with { Framing = framing };
+
+            if (create)
+            {
+                Equal(RenderStatus.Completed, (await client.CreateAsync(framingRequest)).Status);
+            }
+            else
+            {
+                Equal(front, (await client.RenderAsync(framingRequest)).Front);
+            }
+
+            Equal(1, handler.Calls);
+        }
+    }
+}));
+
+tests.Add(("invalid framings fail before HTTP for Render and Create", async () =>
+{
+    using var handler = new MockHandler((_, _) => throw new Exception("Must not send"));
+    using var client = Client(handler);
+
+    foreach (var framing in new[] { (RenderFraming)(-1), (RenderFraming)99 })
+    {
+        await Throws<ArgumentException>(() => client.RenderAsync(request with { Framing = framing }));
+        await Throws<ArgumentException>(() => client.CreateAsync(request with { Framing = framing }));
+    }
+
+    Equal(0, handler.Calls);
+}));
+
 tests.Add(("unsupported appearances retain the server error for Render and Create", async () =>
 {
     foreach (var create in new[] { false, true })

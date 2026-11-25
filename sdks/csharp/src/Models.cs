@@ -6,6 +6,7 @@ namespace Medalbot.Render;
 public enum RenderView { Preview, Front, Back }
 public enum ImageFormat { Webp, Png }
 public enum RenderAppearance { Default, Pattern }
+public enum RenderFraming { Auto, Charm, Standard }
 public enum RenderStatus { Queued, Rendering, Processing, Completed, Failed }
 
 public sealed record RenderRequest
@@ -14,6 +15,8 @@ public sealed record RenderRequest
     public IReadOnlyList<RenderView>? Views { get; init; }
     public ImageFormat? Format { get; init; }
     public RenderAppearance? Appearance { get; init; }
+    // The camera for a gun that has a charm camera. Null behaves as Auto.
+    public RenderFraming? Framing { get; init; }
     public int? StatTrak { get; init; }
     // How long the API keeps the images. Null uses the API key's default, which keeps them forever
     // unless the key sets one.

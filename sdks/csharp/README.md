@@ -3,7 +3,7 @@
 `RenderAsync` returns finished image URLs, whether the images are cached or need a new render. It handles submission, retries, and polling. The package targets .NET 8 or later and has no package dependencies.
 
 ```sh
-dotnet add package Medalbot.Render --version 0.1.5
+dotnet add package Medalbot.Render --version 0.1.6
 ```
 
 ```csharp
@@ -48,6 +48,18 @@ var images = await client.RenderAsync(new RenderRequest
 ```
 
 The server supports pattern appearance for AK-47 preview, front, and back images. Omit `Views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The SDK sends the requested appearance and leaves item and view support checks to the server.
+
+`Framing` picks the camera for guns that have a charm camera. Leave it null or set `RenderFraming.Auto` to use the charm camera only when the item has a charm. Set `RenderFraming.Charm` to use the charm camera for every item of such a gun, with or without a charm, so all its images share one perspective. Set `RenderFraming.Standard` to always use the gun's normal camera, even when the item has a charm:
+
+```csharp
+var images = await client.RenderAsync(new RenderRequest
+{
+    InspectUrl = inspectUrl,
+    Framing = RenderFraming.Charm,
+});
+```
+
+`RenderAsync` and `CreateAsync` throw `ArgumentException` for an undefined `RenderFraming` value before they send the request.
 
 ## Cancellation and timeouts
 

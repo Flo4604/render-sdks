@@ -48,6 +48,19 @@ const images = await client.render({
 
 The API supports pattern appearance for AK-47 preview, front, and back images. Omit `views` to request all three, or provide a subset. Pattern appearance preserves the original preview lighting. Unsupported items return HTTP 422 with code `unsupported_appearance`. The server determines availability; the SDK forwards your requested views without changing them.
 
+## Framing
+
+`framing` is optional and picks the camera for guns that have a charm camera. Omit it or send `"auto"` to use the charm camera only when the item has a charm. Send `"charm"` to use the charm camera for every item of such a gun, with or without a charm, so all its images share one perspective. Send `"standard"` to always use the gun's normal camera, even when the item has a charm:
+
+```ts
+const images = await client.render({
+  inspectUrl,
+  framing: "charm",
+});
+```
+
+The SDK rejects any other value before it sends the request. `framing` also works with `renders.create` and inside `renders.batch` requests.
+
 ## Waiting and retries
 
 The initial HTTP request asks the server to wait up to ten seconds. A ready result returns immediately. For longer jobs, the SDK polls automatically, starting at 500 milliseconds and backing off to two seconds. The caller's promise resolves only when the requested images are ready.
